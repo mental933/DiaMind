@@ -4,18 +4,64 @@ plugins {
 }
 
 android {
+
     namespace = "de.diamind.ai"
-    compileSdk = 37
+    compileSdk = 35
 
     defaultConfig {
+
         applicationId = "de.diamind.ai"
-        minSdk = 31
-        targetSdk = 37
-        versionCode = 16
-        versionName = "1.0-preview-build-016-gemini"
+
+        minSdk = 26
+        targetSdk = 35
+
+        versionCode = 17
+        versionName = "1.0-build-017"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
     }
+
+    buildTypes {
+
+        release {
+            isMinifyEnabled = false
+
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+
+        debug {
+            applicationIdSuffix = ""
+            versionNameSuffix = ""
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    buildFeatures {
+        compose = true
+    }
+
+    composeOptions {
+        kotlinCompilerExtensionVersion = "1.5.15"
+    }
+
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
+}
 
     buildTypes {
         release {
