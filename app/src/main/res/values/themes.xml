@@ -1,0 +1,3 @@
+<resources>
+    <style name="Theme.DiaMind" parent="android:style/Theme.Material.NoActionBar" />
+</resources>
