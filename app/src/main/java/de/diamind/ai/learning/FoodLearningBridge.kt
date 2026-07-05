@@ -55,50 +55,30 @@ object FoodLearningBridge {
         val localError = abs(confirmedCarbs - localCarbs)
         val onlineError = if (onlineCarbs > 0) abs(confirmedCarbs - onlineCarbs) else localError
 
-        val winner = when {
-            onlineCarbs <= 0 -> "lokal"
-            onlineError < localError -> "online"
-            localError < onlineError -> "lokal"
-            else -> "gleich gut"
-        }
-
-        when (winner) {
-            "online" -> increment(context, "bridge_winner_online")
-            "lokal" -> increment(context, "bridge_winner_local")
+        when {
+            onlineCarbs <= 0 -> increment(context, "bridge_winner_local")
+            onlineError < localError -> increment(context, "bridge_winner_online")
+            localError < onlineError -> increment(context, "bridge_winner_local")
             else -> increment(context, "bridge_winner_equal")
         }
 
         val key = foodKey(primaryFood)
         val countKey = "bridge_food_${key}_count"
         val avgKey = "bridge_food_${key}_avg_carbs"
-        val localCorrectionKey = "bridge_food_${key}_local_correction"
-        val onlineCorrectionKey = "bridge_food_${key}_online_correction"
-
         val count = (loadText(context, countKey, "0").toIntOrNull() ?: 0) + 1
-        val oldAvg = loadText(context, avgKey, confirmedCarbs.toString()).replace(',', '.').toDoubleOrNull()
-            ?: confirmedCarbs.toDouble()
+        val oldAvg = loadText(context, avgKey, confirmedCarbs.toString()).replace(',', '.').toDoubleOrNull() ?: confirmedCarbs.toDouble()
         val newAvg = ((oldAvg * (count - 1)) + confirmedCarbs) / count
-
-        val oldLocalCorrection = loadText(context, localCorrectionKey, "0").replace(',', '.').toDoubleOrNull() ?: 0.0
-        val newLocalCorrection = smooth(oldLocalCorrection, (confirmedCarbs - localCarbs).toDouble())
-
-        val oldOnlineCorrection = loadText(context, onlineCorrectionKey, "0").replace(',', '.').toDoubleOrNull() ?: 0.0
-        val newOnlineCorrection = if (onlineCarbs > 0) {
-            smooth(oldOnlineCorrection, (confirmedCarbs - onlineCarbs).toDouble())
-        } else oldOnlineCorrection
-
         saveText(context, countKey, count.toString())
         saveText(context, avgKey, format(newAvg))
-        saveText(context, localCorrectionKey, format(newLocalCorrection))
-        saveText(context, onlineCorrectionKey, format(newOnlineCorrection))
         saveText(context, "bridge_last_food_key", key)
         saveText(context, "bridge_last_food_name", primaryFood.ifBlank { "unbekannt" })
 
         val time = SimpleDateFormat("dd.MM. HH:mm", Locale.getDefault()).format(Date())
-        val studentText = if (count >= 2) {
-            "\nLokales Modell lernt: persönlicher Durchschnitt ${format(newAvg)} g KH · Korrektur ${signed(newLocalCorrection)} g."
-        } else {
-            "\nLokales Modell sammelt erste Bestätigung für dieses Essen."
+        val winner = when {
+            onlineCarbs <= 0 -> "lokal"
+            onlineError < localError -> "online"
+            localError < onlineError -> "lokal"
+            else -> "gleich gut"
         }
 
         val record = """
@@ -108,38 +88,12 @@ object FoodLearningBridge {
             Online: ${if (onlineCarbs > 0) "$onlineCarbs g KH" else "nicht genutzt"}
             Bestätigt: $confirmedCarbs g KH
             Näher dran: $winner
-            Persönlicher Durchschnitt für dieses Essen: ${format(newAvg)} g KH aus $count Bestätigung(en)$studentText
+            Persönlicher Durchschnitt für dieses Essen: ${format(newAvg)} g KH aus $count Bestätigung(en)
         """.trimIndent()
 
         saveText(context, "bridge_last_record", record)
         saveText(context, "foodLearningBridgeSummary", summary(context))
         return record
-    }
-
-    fun calibratedCarbsForFood(context: Context, primaryFood: String, rawLocalCarbs: Int): Int {
-        val key = foodKey(primaryFood)
-        val correction = loadText(context, "bridge_food_${key}_local_correction", "0")
-            .replace(',', '.')
-            .toDoubleOrNull() ?: 0.0
-        val avg = loadText(context, "bridge_food_${key}_avg_carbs", "")
-            .replace(',', '.')
-            .toDoubleOrNull()
-        val count = loadText(context, "bridge_food_${key}_count", "0").toIntOrNull() ?: 0
-
-        val corrected = rawLocalCarbs + correction
-        val mixed = if (count >= 3 && avg != null) {
-            (corrected * 0.65) + (avg * 0.35)
-        } else corrected
-        return mixed.toInt().coerceAtLeast(0)
-    }
-
-    fun personalHint(context: Context, primaryFood: String): String {
-        val key = foodKey(primaryFood)
-        val count = loadText(context, "bridge_food_${key}_count", "0").toIntOrNull() ?: 0
-        if (count <= 0) return "Noch keine persönlichen Bestätigungen für dieses Essen."
-        val avg = loadText(context, "bridge_food_${key}_avg_carbs", "?")
-        val correction = loadText(context, "bridge_food_${key}_local_correction", "0")
-        return "Persönliches Lernen: $count Bestätigung(en), Durchschnitt $avg g KH, lokale Korrektur ${correction} g."
     }
 
     fun summary(context: Context): String {
@@ -156,9 +110,6 @@ object FoodLearningBridge {
             Bestätigte Mahlzeiten: $total
             Mit Online-KI: $online · nur lokal: $local
             Näher dran: Online $onlineWins · Lokal $localWins · gleich $equal
-
-            Lernprinzip
-            Online-KI wirkt als Lehrer, lokale Erkennung als Schüler. Deine bestätigte Schätzung ist die Wahrheit, an der beide gemessen werden.
 
             Letzter Abgleich
             $last
@@ -179,15 +130,6 @@ object FoodLearningBridge {
             .replace(Regex("[^a-z0-9]+"), "_")
             .trim('_')
             .ifBlank { "unknown" }
-    }
-
-    private fun smooth(old: Double, new: Double): Double {
-        return (old * 0.8) + (new * 0.2)
-    }
-
-    private fun signed(value: Double): String {
-        val prefix = if (value >= 0) "+" else ""
-        return prefix + format(value)
     }
 
     private fun format(value: Double): String {

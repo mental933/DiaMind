@@ -19,7 +19,7 @@ data class FoodEstimate(
         }
 
         return "KH: ca. $totalCarbs g" +
-            "\nKE: ca. ${formatOne(ke)}" +
+            "\nKE: ca. ${ formatOne(ke)}" +
             "\nBE: ca. ${formatOne(be)}" +
             "\nSicherheit: $confidence" +
             "\nErkannt: $foods" +

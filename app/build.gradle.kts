@@ -12,8 +12,8 @@ android {
         minSdk = 26
         targetSdk = 37
 
-        versionCode = 22
-        versionName = "1.0-build-022-ai-foundation"
+        versionCode = 30
+        versionName = "1.0-build-030-guardian-one-screen"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

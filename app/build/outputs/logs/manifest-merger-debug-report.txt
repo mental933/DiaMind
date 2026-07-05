@@ -1,9 +1,9 @@
 -- Merging decision tree log ---
 manifest
-ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:2:1-39:12
-INJECTED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:2:1-39:12
-INJECTED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:2:1-39:12
-INJECTED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:2:1-39:12
+ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:2:1-41:12
+INJECTED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:2:1-41:12
+INJECTED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:2:1-41:12
+INJECTED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:2:1-41:12
 MERGED from [androidx.compose.material3:material3-android:1.4.0] C:\Users\Adam\.gradle\caches\9.4.1\transforms\e46d0fa241a902af9d26e1a0f1eae9a1\transformed\material3\AndroidManifest.xml:17:1-22:12
 MERGED from [androidx.compose.material:material-android:1.10.4] C:\Users\Adam\.gradle\caches\9.4.1\transforms\f4f33cef4fcd57f35a5ebf343cd4bf58\transformed\material\AndroidManifest.xml:2:1-7:12
 MERGED from [androidx.compose.animation:animation-core-android:1.10.4] C:\Users\Adam\.gradle\caches\9.4.1\transforms\619a5eeab685b9d93f1f87bc4942e6cc\transformed\animation-core\AndroidManifest.xml:2:1-7:12
@@ -84,9 +84,17 @@ uses-permission#android.permission.INTERNET
 ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:6:5-67
 	android:name
 		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:6:22-64
+uses-permission#android.permission.RECORD_AUDIO
+ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:7:5-71
+	android:name
+		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:7:22-68
+uses-permission#android.permission.POST_NOTIFICATIONS
+ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:8:5-77
+	android:name
+		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:8:22-74
 application
-ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:8:5-37:19
-INJECTED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:8:5-37:19
+ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:10:5-39:19
+INJECTED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:10:5-39:19
 MERGED from [androidx.compose.ui:ui-tooling-android:1.10.4] C:\Users\Adam\.gradle\caches\9.4.1\transforms\019bc0ad6d1e1d4fa9b9f858b737c7f8\transformed\ui-tooling\AndroidManifest.xml:22:5-26:19
 MERGED from [androidx.compose.ui:ui-tooling-android:1.10.4] C:\Users\Adam\.gradle\caches\9.4.1\transforms\019bc0ad6d1e1d4fa9b9f858b737c7f8\transformed\ui-tooling\AndroidManifest.xml:22:5-26:19
 MERGED from [androidx.window:window:1.5.0] C:\Users\Adam\.gradle\caches\9.4.1\transforms\67093e2d9c5c6fc2b79dc3998248c73e\transformed\window-1.5.0\AndroidManifest.xml:22:5-29:19
@@ -108,53 +116,53 @@ MERGED from [androidx.versionedparcelable:versionedparcelable:1.1.1] C:\Users\Ad
 	android:appComponentFactory
 		ADDED from [androidx.core:core:1.19.0] C:\Users\Adam\.gradle\caches\9.4.1\transforms\53affd82f226a511e8a5381ccbb1c305\transformed\core-1.19.0\AndroidManifest.xml:28:18-86
 	android:supportsRtl
-		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:15:9-35
+		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:17:9-35
 	android:label
-		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:13:9-32
+		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:15:9-32
 	android:fullBackupContent
-		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:11:9-54
+		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:13:9-54
 	android:roundIcon
-		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:14:9-54
+		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:16:9-54
 	android:icon
-		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:12:9-43
+		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:14:9-43
 	android:allowBackup
-		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:9:9-35
+		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:11:9-35
 	android:theme
-		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:16:9-45
+		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:18:9-45
 	android:dataExtractionRules
-		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:10:9-65
+		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:12:9-65
 activity#de.diamind.ai.MainActivity
-ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:18:9-27:20
+ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:20:9-29:20
 	android:label
-		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:21:13-36
+		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:23:13-36
 	android:exported
-		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:20:13-36
+		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:22:13-36
 	android:theme
-		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:22:13-49
+		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:24:13-49
 	android:name
-		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:19:13-41
+		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:21:13-41
 intent-filter#action:name:android.intent.action.MAIN+category:name:android.intent.category.LAUNCHER
-ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:23:13-26:29
+ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:25:13-28:29
 action#android.intent.action.MAIN
-ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:24:17-69
+ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:26:17-69
 	android:name
-		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:24:25-66
+		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:26:25-66
 category#android.intent.category.LAUNCHER
-ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:25:17-77
+ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:27:17-77
 	android:name
-		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:25:27-74
+		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:27:27-74
 receiver#de.diamind.ai.XDripReceiver
-ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:29:9-35:20
+ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:31:9-37:20
 	android:exported
-		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:31:13-36
+		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:33:13-36
 	android:name
-		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:30:13-42
+		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:32:13-42
 intent-filter#action:name:com.eveningoutpost.dexdrip.BgEstimate
-ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:32:13-34:29
+ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:34:13-36:29
 action#com.eveningoutpost.dexdrip.BgEstimate
-ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:33:17-80
+ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:35:17-80
 	android:name
-		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:33:25-77
+		ADDED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml:35:25-77
 uses-sdk
 INJECTED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml reason: use-sdk injection requested
 INJECTED from C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\AndroidManifest.xml

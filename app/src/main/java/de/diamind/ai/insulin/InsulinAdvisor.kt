@@ -6,6 +6,7 @@ import de.diamind.ai.storage.Preferences.saveText
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
 object InsulinAdvisor {
 
@@ -15,6 +16,11 @@ object InsulinAdvisor {
         if (loadText(context, "factorMorning", "").isBlank()) saveText(context, "factorMorning", "1.0")
         if (loadText(context, "factorNoon", "").isBlank()) saveText(context, "factorNoon", "2.5")
         if (loadText(context, "factorEvening", "").isBlank()) saveText(context, "factorEvening", "3.0")
+        if (loadText(context, "bolusInsulin", "").isBlank()) saveText(context, "bolusInsulin", "Lyumjev")
+        if (loadText(context, "basalInsulin", "").isBlank()) saveText(context, "basalInsulin", "Tresiba")
+        if (loadText(context, "bolusStep", "").isBlank()) saveText(context, "bolusStep", "1.0")
+        if (loadText(context, "targetMin", "").isBlank()) saveText(context, "targetMin", "80")
+        if (loadText(context, "targetMax", "").isBlank()) saveText(context, "targetMax", "160")
         if (loadText(context, "learningMealCount", "").isBlank()) saveText(context, "learningMealCount", "0")
         slots.forEach { slot ->
             if (loadText(context, slotKey(slot, "count"), "").isBlank()) saveText(context, slotKey(slot, "count"), "0")
@@ -45,8 +51,41 @@ object InsulinAdvisor {
         }
     }
 
-    fun doseForKe(ke: Double, factor: Double): Double {
-        return roundToHalf(ke * factor)
+    fun doseForKe(ke: Double, factor: Double): Double = roundToHalf(ke * factor)
+
+    fun doseForKe(context: Context, ke: Double, factor: Double): Double {
+        initializeDefaults(context)
+        val raw = ke * factor
+        val step = loadText(context, "bolusStep", "1.0").replace(',', '.').toDoubleOrNull() ?: 1.0
+        return when {
+            step >= 1.0 -> raw.roundToInt().toDouble().coerceAtLeast(0.0)
+            step >= 0.5 -> roundToHalf(raw)
+            else -> roundToTenth(raw)
+        }
+    }
+
+    fun formatDose(context: Context, dose: Double): String {
+        val step = loadText(context, "bolusStep", "1.0").replace(',', '.').toDoubleOrNull() ?: 1.0
+        return if (step >= 1.0) "${dose.roundToInt()}" else format(dose)
+    }
+
+    fun preMealTimingAdvice(context: Context, glucoseInput: String, trend: String, carbs: Int = 0): String {
+        val glucose = glucoseInput.toIntOrNull()
+        val trendLower = trend.lowercase(Locale.getDefault())
+        val bolus = loadText(context, "bolusInsulin", "Lyumjev")
+        val fastFalling = trendLower in listOf("fortyfivedown", "singledown", "doubledown")
+        val rising = trendLower in listOf("fortyfiveup", "singleup", "doubleup")
+        val veryFastRising = trendLower == "doubleup"
+        return when {
+            glucose == null -> "Spritz-Ess-Abstand: unbekannt, weil kein aktueller Glukosewert vorliegt. Bitte selbst prüfen."
+            glucose < 80 || fastFalling -> "Spritz-Ess-Abstand: sehr vorsichtig. Bei $glucose mg/dL oder fallendem Trend eher erst essen bzw. keinen langen Vorab-Abstand wählen. Bitte nach deinem Therapieplan prüfen."
+            glucose in 80..105 && !rising -> "Spritz-Ess-Abstand: eher kurz halten. Wert ist im unteren Bereich; erst Essen sicherstellen und Bolus bewusst bestätigen."
+            glucose in 106..160 && trendLower == "flat" -> "Spritz-Ess-Abstand: bei $bolus meist normal/kurz möglich. Für deinen Alltag bitte individuell bestätigen."
+            glucose in 106..180 && rising -> "Spritz-Ess-Abstand: Wert steigt. Ein kurzer Vorab-Abstand kann sinnvoll sein, aber nur wenn Essen sicher unmittelbar folgt."
+            glucose > 180 || veryFastRising -> "Spritz-Ess-Abstand: Wert ist erhöht/steigend. Vorab-Abstand oder Korrektur nur nach deinem Plan; IOB/letzten Bolus beachten."
+            carbs < 10 -> "Spritz-Ess-Abstand: kleine Mahlzeit. Bolus und Abstand besonders vorsichtig prüfen."
+            else -> "Spritz-Ess-Abstand: individuell prüfen. DiaMind gibt nur eine Orientierung, keine automatische Therapieentscheidung."
+        }
     }
 
     fun saveMealAssumption(
@@ -62,9 +101,8 @@ object InsulinAdvisor {
     ): String {
         initializeDefaults(context)
         val actualDose = actualDoseInput.replace(',', '.').toDoubleOrNull() ?: recommendedDose
-        val status = if (actualDoseInput.isBlank()) "als ausgeführt angenommen" else "manuell korrigiert"
+        val status = if (actualDoseInput.isBlank()) "als ausgeführt angenommen" else "bestätigt/korrigiert"
         val time = SimpleDateFormat("dd.MM. HH:mm", Locale.getDefault()).format(Date())
-
         val count = (loadText(context, "learningMealCount", "0").toIntOrNull() ?: 0) + 1
         saveText(context, "learningMealCount", count.toString())
         saveText(context, "lastMealSlot", slot)
@@ -78,6 +116,7 @@ object InsulinAdvisor {
         saveText(context, "lastMealGlucoseBefore", glucoseBefore)
         saveText(context, "lastMealTrendBefore", trendBefore)
         saveText(context, "lastMealFollowUpDone", "false")
+        saveText(context, "assistantBubble", "Mahlzeit gespeichert: ${description.ifBlank { "Essen" }} · ${carbs} g KH · ${formatDose(context, actualDose)} IE bestätigt.")
 
         val record = """
             $time · $slot
@@ -85,11 +124,11 @@ object InsulinAdvisor {
             Vorher: $glucoseBefore mg/dL · ${trendLabel(trendBefore)}
             KH: ca. $carbs g · KE: ${format(ke)}
             Faktor: ${format(factorForSlot(context, slot))} IE/KE
-            Empfehlung: ${format(recommendedDose)} IE
-            Gespeichert: ${format(actualDose)} IE ($status)
+            Empfehlung: ${formatDose(context, recommendedDose)} IE
+            Gespeichert: ${formatDose(context, actualDose)} IE ($status)
+            ${preMealTimingAdvice(context, glucoseBefore, trendBefore, carbs)}
             Follow-up: noch offen
         """.trimIndent()
-
         saveText(context, "lastBolusRecord", record)
         return record
     }
@@ -98,7 +137,6 @@ object InsulinAdvisor {
         initializeDefaults(context)
         val after = afterGlucoseInput.trim().toIntOrNull()
             ?: return "Bitte einen gültigen Glukosewert eingeben."
-
         val slot = loadText(context, "lastMealSlot", currentSlot())
         val before = loadText(context, "lastMealGlucoseBefore", "?")
         val time = SimpleDateFormat("dd.MM. HH:mm", Locale.getDefault()).format(Date())
@@ -107,28 +145,24 @@ object InsulinAdvisor {
             after > 180 -> "zu hoch"
             else -> "im Ziel"
         }
-
         increment(context, slotKey(slot, "count"))
         when (outcome) {
             "zu niedrig" -> increment(context, slotKey(slot, "low"))
             "zu hoch" -> increment(context, slotKey(slot, "high"))
             else -> increment(context, slotKey(slot, "ok"))
         }
-
         val currentFactor = factorForSlot(context, slot)
         val proposedFactor = when (outcome) {
             "zu hoch" -> currentFactor + 0.1
             "zu niedrig" -> (currentFactor - 0.1).coerceAtLeast(0.1)
             else -> currentFactor
         }
-
         val suggestion = if (outcome == "im Ziel") {
             "Kein Anpassungsvorschlag. Faktor beibehalten."
         } else {
             saveText(context, slotKey(slot, "proposal"), format(proposedFactor))
             "Vorschlag: $slot von ${format(currentFactor)} auf ${format(proposedFactor)} IE/KE ändern."
         }
-
         val text = """
             Follow-up gespeichert: $time
             Zeitraum: $slot
@@ -137,10 +171,10 @@ object InsulinAdvisor {
             Bewertung: $outcome
             $suggestion
         """.trimIndent()
-
         saveText(context, "lastMealFollowUpDone", "true")
         saveText(context, "lastFollowUpRecord", text)
         saveText(context, "lastBolusRecord", loadText(context, "lastBolusRecord", "") + "\n\n$text")
+        saveText(context, "assistantBubble", "Follow-up bewertet: $outcome. $suggestion")
         return text
     }
 
@@ -152,6 +186,7 @@ object InsulinAdvisor {
         saveText(context, slotKey(slot, "proposal"), "")
         val message = "Faktor für $slot übernommen: $proposal IE/KE"
         saveText(context, "lastFactorChange", message)
+        saveText(context, "assistantBubble", message)
         return message
     }
 
@@ -161,6 +196,10 @@ object InsulinAdvisor {
         val last = loadText(context, "lastBolusRecord", "Noch keine Mahlzeit mit Bolusannahme gespeichert.")
         val followUp = loadText(context, "lastFollowUpRecord", "Noch kein 2–3h-Follow-up gespeichert.")
         return """
+            Therapieprofil
+            Bolus: ${loadText(context, "bolusInsulin", "Lyumjev")} · Schrittweite: ${loadText(context, "bolusStep", "1.0")} IE
+            Basal: ${loadText(context, "basalInsulin", "Tresiba")} · Dosis: ${loadText(context, "basalDose", "nicht gesetzt")}
+
             Start- und Lernfaktoren
             Frühstück: ${loadText(context, "factorMorning", "1.0")} IE/KE · ${slotStats(context, "Frühstück")}
             Mittag: ${loadText(context, "factorNoon", "2.5")} IE/KE · ${slotStats(context, "Mittag")}
@@ -173,9 +212,6 @@ object InsulinAdvisor {
 
             Letztes Follow-up
             $followUp
-
-            Lernmodus
-            DiaMind nimmt die Empfehlung als ausgeführt an, solange du keinen anderen gespritzten Wert einträgst. Vorschläge werden nur vorbereitet und erst übernommen, wenn du sie aktiv bestätigst.
         """.trimIndent()
     }
 
@@ -188,24 +224,16 @@ object InsulinAdvisor {
         return if (proposals.isEmpty()) "Keine offenen Faktor-Vorschläge." else proposals.joinToString("\n")
     }
 
-    fun format(value: Double): String {
-        return String.format(Locale.GERMAN, "%.1f", value)
-    }
+    fun format(value: Double): String = String.format(Locale.GERMAN, "%.1f", value)
 
-    private fun currentHour(): Int {
-        return SimpleDateFormat("H", Locale.getDefault()).format(Date()).toIntOrNull() ?: 12
-    }
+    private fun currentHour(): Int = SimpleDateFormat("H", Locale.getDefault()).format(Date()).toIntOrNull() ?: 12
+    private fun roundToHalf(value: Double): Double = kotlin.math.round(value * 2.0) / 2.0
+    private fun roundToTenth(value: Double): Double = kotlin.math.round(value * 10.0) / 10.0
 
-    private fun roundToHalf(value: Double): Double {
-        return kotlin.math.round(value * 2.0) / 2.0
-    }
-
-    private fun factorKey(slot: String): String {
-        return when (slot) {
-            "Frühstück" -> "factorMorning"
-            "Mittag" -> "factorNoon"
-            else -> "factorEvening"
-        }
+    private fun factorKey(slot: String): String = when (slot) {
+        "Frühstück" -> "factorMorning"
+        "Mittag" -> "factorNoon"
+        else -> "factorEvening"
     }
 
     private fun slotKey(slot: String, suffix: String): String {
@@ -232,17 +260,15 @@ object InsulinAdvisor {
         return "$count Follow-ups · Ziel $ok · hoch $high · niedrig $low · $proposalText"
     }
 
-    private fun trendLabel(trend: String): String {
-        return when (trend.lowercase()) {
-            "doubleup" -> "schnell steigend"
-            "singleup" -> "steigend"
-            "fortyfiveup" -> "leicht steigend"
-            "flat" -> "stabil"
-            "fortyfivedown" -> "leicht fallend"
-            "singledown" -> "fallend"
-            "doubledown" -> "schnell fallend"
-            "manual" -> "manuell"
-            else -> trend
-        }
+    private fun trendLabel(trend: String): String = when (trend.lowercase()) {
+        "doubleup" -> "schnell steigend"
+        "singleup" -> "steigend"
+        "fortyfiveup" -> "leicht steigend"
+        "flat" -> "stabil"
+        "fortyfivedown" -> "leicht fallend"
+        "singledown" -> "fallend"
+        "doubledown" -> "schnell fallend"
+        "manual" -> "manuell"
+        else -> trend
     }
 }
