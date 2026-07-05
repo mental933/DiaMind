@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="de.diamind.ai"
-    android:versionCode="16"
-    android:versionName="1.0-preview-build-016-gemini" >
+    android:versionCode="20"
+    android:versionName="1.0-build-020-gemini-vision" >
 
     <uses-sdk
-        android:minSdkVersion="31"
+        android:minSdkVersion="26"
         android:targetSdkVersion="37" />
 
     <uses-permission android:name="android.permission.CAMERA" />

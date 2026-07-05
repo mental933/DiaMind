@@ -12,8 +12,8 @@ android {
         minSdk = 26
         targetSdk = 37
 
-        versionCode = 18
-        versionName = "1.0-build-018"
+        versionCode = 20
+        versionName = "1.0-build-020-gemini-vision"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

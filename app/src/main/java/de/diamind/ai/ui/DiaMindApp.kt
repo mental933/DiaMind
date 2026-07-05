@@ -29,6 +29,7 @@ import de.diamind.ai.ui.screens.ChatScreen
 import de.diamind.ai.ui.screens.DashboardScreen
 import de.diamind.ai.ui.screens.DiabetesScreen
 import de.diamind.ai.ui.screens.FoodScreen
+import de.diamind.ai.ui.screens.AiSettingsScreen
 import de.diamind.ai.ui.screens.SecurityScreen
 
 @Composable
@@ -51,7 +52,7 @@ fun DiaMindApp() {
         Row(
             modifier = Modifier.horizontalScroll(navScroll)
         ) {
-            listOf("Dashboard", "Chat", "Essen", "Diabetes", "Schutz").forEach { item ->
+            listOf("Dashboard", "Chat", "Essen", "Diabetes", "KI", "Schutz").forEach { item ->
                 Button(
                     onClick = { screen = item },
                     modifier = Modifier.padding(end = 8.dp),
@@ -71,6 +72,7 @@ fun DiaMindApp() {
             "Chat" -> ChatScreen(context)
             "Essen" -> FoodScreen(context)
             "Diabetes" -> DiabetesScreen(context)
+            "KI" -> AiSettingsScreen(context)
             "Schutz" -> SecurityScreen()
         }
     }

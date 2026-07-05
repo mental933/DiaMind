@@ -33,9 +33,11 @@ object DiaMindBrain {
             text.contains("hba1c", true) ->
                 "Der HbA1c ist dein Langzeit-Kompass. Einzelne schwierige Tage verändern ihn kaum."
             text.contains("datenschutz", true) ->
-                "DiaMind arbeitet offline. Keine Cloud, keine Werbung, keine versteckte Datenübertragung."
+                "DiaMind arbeitet standardmäßig lokal. Online-KI wird nur genutzt, wenn du sie in den KI-Einstellungen aktivierst und einen API-Key hinterlegst."
             text.contains("faktor", true) || text.contains("lern", true) ->
                 InsulinAdvisor.learningSummary(context)
+            text.contains("ki", true) || text.contains("gemini", true) || text.contains("openai", true) ->
+                "Du kannst in den KI-Einstellungen zwischen Lokal, Gemini und OpenAI wählen. Lokal überträgt nichts. Gemini/OpenAI können Essen, Verpackungen und Marken besser analysieren, senden dafür aber Bild oder Text an den Anbieter."
             text.contains("essen", true) || text.contains("mahlzeit", true) || text.contains("ke", true) ->
                 "Im Essen-Bereich kannst du ein Foto machen, KE schätzen und eine Bolusannahme auf Basis deiner Tagesfaktoren speichern. Wenn du keinen anderen Wert einträgst, wird die Empfehlung als ausgeführt angenommen."
             text.contains("insulin", true) ->
