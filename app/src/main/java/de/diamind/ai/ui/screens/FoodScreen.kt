@@ -35,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import de.diamind.ai.insulin.InsulinAdvisor
+import de.diamind.ai.learning.FoodLearningBridge
 import de.diamind.ai.storage.Preferences.loadText
 import de.diamind.ai.storage.Preferences.saveText
 import de.diamind.ai.ui.components.CardBox
@@ -47,6 +48,8 @@ import java.io.ByteArrayOutputStream
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.Locale
+import kotlin.math.roundToInt
 
 @Composable
 fun FoodScreen(context: Context) {
@@ -67,13 +70,27 @@ fun FoodScreen(context: Context) {
     var pendingCarbs by remember { mutableStateOf(0) }
     var pendingKe by remember { mutableStateOf(0.0) }
     var pendingDose by remember { mutableStateOf(0.0) }
+    var pendingRecommendedDose by remember { mutableStateOf(0.0) }
+    var pendingDoseChanged by remember { mutableStateOf(false) }
     var pendingSlot by remember { mutableStateOf(InsulinAdvisor.currentSlot()) }
     var pendingFactor by remember { mutableStateOf(InsulinAdvisor.factorForSlot(context, pendingSlot)) }
     var pendingGlucose by remember { mutableStateOf(loadText(context, "glucose", "?")) }
     var pendingTrend by remember { mutableStateOf(loadText(context, "glucoseTrend", "manual")) }
+    var pendingAiMode by remember { mutableStateOf(aiMode) }
+    var pendingLocalCarbs by remember { mutableStateOf(0) }
+    var pendingOnlineCarbs by remember { mutableStateOf(0) }
+    var pendingPrimaryFood by remember { mutableStateOf("") }
+    var learningBridgeText by remember { mutableStateOf(FoodLearningBridge.summary(context)) }
     var hasPendingEstimate by remember { mutableStateOf(false) }
 
     fun preparePendingEstimate(estimate: MealEstimate) {
+        val localEstimate = estimateMeal(
+            context = context,
+            description = description,
+            portion = portion,
+            bitmap = photo,
+            aiMode = "Lokal"
+        )
         val glucose = loadText(context, "glucose", "?")
         val trend = loadText(context, "glucoseTrend", "manual")
         val slot = InsulinAdvisor.currentSlot()
@@ -82,13 +99,19 @@ fun FoodScreen(context: Context) {
         val dose = InsulinAdvisor.doseForKe(ke, factor)
 
         pendingDescription = description.ifBlank { estimate.primaryFood }
+        pendingPrimaryFood = estimate.primaryFood
         pendingCarbs = estimate.carbs
         pendingKe = ke
         pendingDose = dose
+        pendingRecommendedDose = dose
+        pendingDoseChanged = false
         pendingSlot = slot
         pendingFactor = factor
         pendingGlucose = glucose
         pendingTrend = trend
+        pendingAiMode = aiMode
+        pendingLocalCarbs = localEstimate.carbs
+        pendingOnlineCarbs = if (aiMode == "Lokal") 0 else estimate.carbs
         hasPendingEstimate = true
 
         result = estimate.toDisplayText(
@@ -99,6 +122,14 @@ fun FoodScreen(context: Context) {
             recommendedDose = dose,
             aiMode = aiMode
         )
+        result += "\n\n" + FoodLearningBridge.previewText(
+            mode = aiMode,
+            localCarbs = pendingLocalCarbs,
+            onlineCarbs = pendingOnlineCarbs,
+            proposedCarbs = pendingCarbs,
+            primaryFood = pendingPrimaryFood.ifBlank { pendingDescription }
+        )
+        result += "\n\n" + FoodLearningBridge.personalHint(context, pendingPrimaryFood.ifBlank { pendingDescription })
         saveText(context, "lastFoodEstimate", result)
         insulinResult = "Noch nicht bestätigt. Bitte KE/Bolus prüfen und dann übernehmen."
     }
@@ -106,9 +137,7 @@ fun FoodScreen(context: Context) {
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicturePreview()
     ) { bitmap ->
-        if (bitmap != null) {
-            photo = bitmap
-        }
+        if (bitmap != null) photo = bitmap
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -128,7 +157,7 @@ fun FoodScreen(context: Context) {
             Text("Essen & KE-Schätzung", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(10.dp))
             Text(
-                "Foto aufnehmen, Mahlzeit beschreiben, KE schätzen und anschließend bestätigen. Keine automatische Insulindosierung.",
+                "Build 022: lokale Fotoanalyse v1 + Online/Gemini als Lehrer + persönliches Lernen aus Bestätigungen. Keine automatische Insulindosierung.",
                 color = DiaMindMuted
             )
 
@@ -145,9 +174,7 @@ fun FoodScreen(context: Context) {
                         colors = ButtonDefaults.buttonColors(
                             containerColor = if (aiMode == item) DiaMindRed else Color.DarkGray
                         )
-                    ) {
-                        Text(item)
-                    }
+                    ) { Text(item) }
                 }
             }
             Text(aiModeInfo(aiMode), color = DiaMindWarning)
@@ -165,7 +192,7 @@ fun FoodScreen(context: Context) {
                     modifier = Modifier.fillMaxWidth()
                 )
                 Text(
-                    "Der Schlüssel wird lokal auf deinem Gerät gespeichert. Im Gemini-Modus wird das Foto an Google Gemini gesendet.",
+                    "Im Gemini-Modus wird das Foto an Google Gemini gesendet. Deine Bestätigung trainiert anschließend das lokale DiaMind-Modell.",
                     color = DiaMindWarning
                 )
             }
@@ -183,7 +210,7 @@ fun FoodScreen(context: Context) {
                     modifier = Modifier.fillMaxWidth()
                 )
                 Text(
-                    "Der Schlüssel wird lokal auf deinem Gerät gespeichert. Im OpenAI-Modus wird das Foto an OpenAI gesendet.",
+                    "Im OpenAI-Modus wird das Foto an OpenAI gesendet. Deine Bestätigung trainiert anschließend das lokale DiaMind-Modell.",
                     color = DiaMindWarning
                 )
             }
@@ -199,9 +226,7 @@ fun FoodScreen(context: Context) {
                 },
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = DiaMindRed)
-            ) {
-                Text("Foto aufnehmen")
-            }
+            ) { Text("Foto aufnehmen") }
 
             photo?.let {
                 Spacer(Modifier.height(12.dp))
@@ -219,7 +244,7 @@ fun FoodScreen(context: Context) {
                 value = description,
                 onValueChange = { description = it },
                 label = { Text("Was ist auf dem Teller oder auf der Verpackung?") },
-                placeholder = { Text("z.B. High Protein Pudding, Pizza, Reis, Nudeln...") },
+                placeholder = { Text("z.B. Ehrmann High Protein Pudding, Pizza, Döner, Nudeln...") },
                 modifier = Modifier.fillMaxWidth()
             )
 
@@ -233,25 +258,29 @@ fun FoodScreen(context: Context) {
                         colors = ButtonDefaults.buttonColors(
                             containerColor = if (portion == item) DiaMindRed else Color.DarkGray
                         )
-                    ) {
-                        Text(item)
-                    }
+                    ) { Text(item) }
                 }
             }
 
             Spacer(Modifier.height(12.dp))
             Button(
                 onClick = {
+                    val bitmap = photo
                     when (aiMode) {
                         "Gemini" -> {
-                            val bitmap = photo
                             if (geminiApiKey.isBlank()) {
-                                result = "Gemini braucht einen API-Key. Du kannst alternativ Lokal nutzen."
+                                val fallback = estimateMeal(context, description, portion, bitmap, "Lokal")
+                                preparePendingEstimate(fallback.copy(
+                                    reason = fallback.reason + " · Gemini nicht genutzt: API-Key fehlt."
+                                ))
                             } else if (bitmap == null) {
-                                result = "Bitte zuerst ein Foto aufnehmen, damit Gemini das Essen sehen kann."
+                                val fallback = estimateMeal(context, description, portion, null, "Lokal")
+                                preparePendingEstimate(fallback.copy(
+                                    reason = fallback.reason + " · Gemini braucht ein Foto."
+                                ))
                             } else {
                                 isOnlineLoading = true
-                                result = "Gemini analysiert das Foto..."
+                                result = "Gemini analysiert Foto, Verpackung und Portion..."
                                 analyzeFoodWithGemini(
                                     apiKey = geminiApiKey,
                                     bitmap = bitmap,
@@ -259,12 +288,13 @@ fun FoodScreen(context: Context) {
                                     portion = portion,
                                     onDone = { estimate, error ->
                                         isOnlineLoading = false
-                                        if (error != null) {
-                                            result = error + "\n\nIch nutze ersatzweise die lokale Schätzung."
-                                            val fallback = estimateMeal(description, portion, photo != null, "Lokal")
-                                            preparePendingEstimate(fallback)
-                                        } else if (estimate != null) {
+                                        if (estimate != null) {
                                             preparePendingEstimate(estimate)
+                                        } else {
+                                            val fallback = estimateMeal(context, description, portion, photo, "Lokal")
+                                            preparePendingEstimate(fallback.copy(
+                                                reason = fallback.reason + " · Gemini Fehler: ${error ?: "unbekannt"}."
+                                            ))
                                         }
                                     }
                                 )
@@ -272,14 +302,19 @@ fun FoodScreen(context: Context) {
                         }
 
                         "OpenAI" -> {
-                            val bitmap = photo
                             if (openAiApiKey.isBlank()) {
-                                result = "OpenAI braucht einen API-Key. Du kannst alternativ Lokal oder Gemini nutzen."
+                                val fallback = estimateMeal(context, description, portion, bitmap, "Lokal")
+                                preparePendingEstimate(fallback.copy(
+                                    reason = fallback.reason + " · OpenAI nicht genutzt: API-Key fehlt."
+                                ))
                             } else if (bitmap == null) {
-                                result = "Bitte zuerst ein Foto aufnehmen, damit OpenAI das Essen sehen kann."
+                                val fallback = estimateMeal(context, description, portion, null, "Lokal")
+                                preparePendingEstimate(fallback.copy(
+                                    reason = fallback.reason + " · OpenAI braucht ein Foto."
+                                ))
                             } else {
                                 isOnlineLoading = true
-                                result = "OpenAI analysiert das Foto..."
+                                result = "OpenAI analysiert Foto, Verpackung und Portion..."
                                 analyzeFoodOnline(
                                     apiKey = openAiApiKey,
                                     bitmap = bitmap,
@@ -287,30 +322,26 @@ fun FoodScreen(context: Context) {
                                     portion = portion,
                                     onDone = { estimate, error ->
                                         isOnlineLoading = false
-                                        if (error != null) {
-                                            result = error + "\n\nIch nutze ersatzweise die lokale Schätzung."
-                                            val fallback = estimateMeal(description, portion, photo != null, "Lokal")
-                                            preparePendingEstimate(fallback)
-                                        } else if (estimate != null) {
+                                        if (estimate != null) {
                                             preparePendingEstimate(estimate)
+                                        } else {
+                                            val fallback = estimateMeal(context, description, portion, photo, "Lokal")
+                                            preparePendingEstimate(fallback.copy(
+                                                reason = fallback.reason + " · OpenAI Fehler: ${error ?: "unbekannt"}."
+                                            ))
                                         }
                                     }
                                 )
                             }
                         }
 
-                        else -> {
-                            val estimate = estimateMeal(description, portion, photo != null, aiMode)
-                            preparePendingEstimate(estimate)
-                        }
+                        else -> preparePendingEstimate(estimateMeal(context, description, portion, bitmap, "Lokal"))
                     }
                 },
                 enabled = !isOnlineLoading,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = DiaMindRed)
-            ) {
-                Text(if (isOnlineLoading) "Analysiere..." else "KE schätzen")
-            }
+            ) { Text(if (isOnlineLoading) "Analysiere..." else "KE schätzen") }
         }
 
         Spacer(Modifier.height(14.dp))
@@ -331,33 +362,49 @@ fun FoodScreen(context: Context) {
                 Row {
                     AdjustmentButton("-0,5") {
                         pendingKe = (pendingKe - 0.5).coerceAtLeast(0.0)
-                        pendingCarbs = (pendingKe * 10.0).toInt()
+                        pendingCarbs = (pendingKe * 10.0).roundToInt()
                         pendingDose = InsulinAdvisor.doseForKe(pendingKe, pendingFactor)
+                        pendingRecommendedDose = pendingDose
                     }
                     AdjustmentButton("-0,1") {
                         pendingKe = (pendingKe - 0.1).coerceAtLeast(0.0)
-                        pendingCarbs = (pendingKe * 10.0).toInt()
+                        pendingCarbs = (pendingKe * 10.0).roundToInt()
                         pendingDose = InsulinAdvisor.doseForKe(pendingKe, pendingFactor)
+                        pendingRecommendedDose = pendingDose
                     }
                     AdjustmentButton("+0,1") {
                         pendingKe += 0.1
-                        pendingCarbs = (pendingKe * 10.0).toInt()
+                        pendingCarbs = (pendingKe * 10.0).roundToInt()
                         pendingDose = InsulinAdvisor.doseForKe(pendingKe, pendingFactor)
+                        pendingRecommendedDose = pendingDose
                     }
                     AdjustmentButton("+0,5") {
                         pendingKe += 0.5
-                        pendingCarbs = (pendingKe * 10.0).toInt()
+                        pendingCarbs = (pendingKe * 10.0).roundToInt()
                         pendingDose = InsulinAdvisor.doseForKe(pendingKe, pendingFactor)
+                        pendingRecommendedDose = pendingDose
                     }
                 }
 
                 Spacer(Modifier.height(8.dp))
                 Text("Bolus anpassen", color = Color.LightGray)
                 Row {
-                    AdjustmentButton("-0,5") { pendingDose = (pendingDose - 0.5).coerceAtLeast(0.0) }
-                    AdjustmentButton("-0,1") { pendingDose = (pendingDose - 0.1).coerceAtLeast(0.0) }
-                    AdjustmentButton("+0,1") { pendingDose += 0.1 }
-                    AdjustmentButton("+0,5") { pendingDose += 0.5 }
+                    AdjustmentButton("-0,5") {
+                        pendingDose = (pendingDose - 0.5).coerceAtLeast(0.0)
+                        pendingDoseChanged = true
+                    }
+                    AdjustmentButton("-0,1") {
+                        pendingDose = (pendingDose - 0.1).coerceAtLeast(0.0)
+                        pendingDoseChanged = true
+                    }
+                    AdjustmentButton("+0,1") {
+                        pendingDose += 0.1
+                        pendingDoseChanged = true
+                    }
+                    AdjustmentButton("+0,5") {
+                        pendingDose += 0.5
+                        pendingDoseChanged = true
+                    }
                 }
 
                 Spacer(Modifier.height(12.dp))
@@ -376,24 +423,35 @@ fun FoodScreen(context: Context) {
                         result = confirmedResult
                         saveText(context, "lastFoodEstimate", confirmedResult)
 
-                        insulinResult = InsulinAdvisor.saveMealAssumption(
+                        val actualDoseInput = if (pendingDoseChanged) formatOne(pendingDose) else ""
+                        val bolusRecord = InsulinAdvisor.saveMealAssumption(
                             context = context,
                             description = pendingDescription,
                             carbs = pendingCarbs,
                             ke = pendingKe,
-                            recommendedDose = pendingDose,
-                            actualDoseInput = formatOne(pendingDose),
+                            recommendedDose = pendingRecommendedDose,
+                            actualDoseInput = actualDoseInput,
                             slot = pendingSlot,
                             glucoseBefore = pendingGlucose,
                             trendBefore = pendingTrend
                         )
+                        val bridgeRecord = FoodLearningBridge.recordConfirmedMeal(
+                            context = context,
+                            mode = pendingAiMode,
+                            localCarbs = pendingLocalCarbs,
+                            onlineCarbs = pendingOnlineCarbs,
+                            confirmedCarbs = pendingCarbs,
+                            primaryFood = pendingPrimaryFood.ifBlank { pendingDescription },
+                            portion = portion,
+                            slot = pendingSlot
+                        )
+                        learningBridgeText = FoodLearningBridge.summary(context)
+                        insulinResult = bolusRecord + "\n\n" + bridgeRecord
                         hasPendingEstimate = false
                     },
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(containerColor = DiaMindRed)
-                ) {
-                    Text("✓ Schätzung übernehmen")
-                }
+                ) { Text("✓ Schätzung übernehmen") }
             }
 
             Spacer(Modifier.height(12.dp))
@@ -407,6 +465,14 @@ fun FoodScreen(context: Context) {
             )
         }
 
+        Spacer(Modifier.height(14.dp))
+
+        CardBox {
+            Text("Online/Lokal-Lernen", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            Text(learningBridgeText, color = Color.White)
+        }
+
         Spacer(Modifier.height(24.dp))
     }
 }
@@ -417,9 +483,7 @@ private fun AdjustmentButton(text: String, onClick: () -> Unit) {
         onClick = onClick,
         modifier = Modifier.padding(end = 6.dp),
         colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray)
-    ) {
-        Text(text)
-    }
+    ) { Text(text) }
 }
 
 data class MealEstimate(
@@ -458,44 +522,58 @@ data class MealEstimate(
     }
 }
 
-fun estimateMeal(description: String, portion: String, hasPhoto: Boolean, aiMode: String): MealEstimate {
-    val text = description.lowercase()
+fun estimateMeal(
+    context: Context,
+    description: String,
+    portion: String,
+    bitmap: Bitmap?,
+    aiMode: String
+): MealEstimate {
+    val text = description.lowercase(Locale.getDefault())
     val rule = foodRules.firstOrNull { rule -> rule.keywords.any { text.contains(it) } }
-    val base = rule?.carbsNormalPortion ?: when {
+    val visual = bitmap?.let { analyzeLocalPhoto(it) }
+    val detectedRule = rule ?: visual?.suggestedRule
+
+    val rawBase = detectedRule?.carbsNormalPortion ?: when {
+        text.isBlank() && visual != null -> visual.defaultCarbs
         text.isBlank() -> 40
         else -> 50
     }
 
-    val multiplier = when (portion.lowercase()) {
+    val multiplier = when (portion.lowercase(Locale.getDefault())) {
         "klein" -> 0.7
         "groß" -> 1.35
         else -> 1.0
     }
 
-    val carbs = (base * multiplier).toInt().coerceAtLeast(0)
+    val primaryFood = detectedRule?.name ?: if (text.isBlank()) visual?.label ?: "unbekannte Mahlzeit" else description
+    val rawCarbs = (rawBase * multiplier).roundToInt().coerceAtLeast(0)
+    val carbs = FoodLearningBridge.calibratedCarbsForFood(context, primaryFood, rawCarbs)
+
     val confidence = when {
-        aiMode != "Lokal" && text.isNotBlank() && hasPhoto -> "mittel bis hoch"
-        rule != null && text.isNotBlank() -> "mittel"
-        text.isBlank() && hasPhoto -> "niedrig · Foto vorhanden, aber noch keine echte Bild-KI aktiv"
+        rule != null && visual != null -> "mittel bis hoch · Beschreibung und lokale Fotoanalyse vorhanden"
+        rule != null -> "mittel · aus deiner Beschreibung erkannt"
+        visual != null -> visual.confidence
         else -> "niedrig bis mittel"
     }
 
-    val primaryFood = rule?.name ?: if (text.isBlank()) "unbekannte Mahlzeit" else description
     val seen = when {
-        aiMode != "Lokal" && hasPhoto ->
-            "Foto vorhanden. $aiMode kann Marken, Verpackungen und Teller online analysieren. Wenn kein API-Key aktiv ist, nutzt DiaMind lokale Regeln. Vermutet: $primaryFood."
-        hasPhoto ->
-            "Foto vorhanden. Lokale Foto-KI ist noch nicht aktiv. Vermutet aus deiner Beschreibung: $primaryFood."
+        rule != null && visual != null ->
+            "Beschreibung spricht für ${rule.name}. Lokale Fotoanalyse v1 sieht ${visual.label}."
+        rule != null ->
+            "Aus deiner Beschreibung erkannt: ${rule.name}."
+        visual != null ->
+            "Lokale Fotoanalyse v1 sieht ${visual.label}. Das ist eine vorsichtige Offline-Schätzung ohne Cloud."
         text.isNotBlank() ->
-            "Aus deiner Beschreibung erkannt: $primaryFood."
+            "Aus deiner Beschreibung geschätzt: $description."
         else ->
             "Keine eindeutige Mahlzeit. Standard-Schätzung verwendet."
     }
 
     val reason = buildString {
-        append("Beschreibung '${description.ifBlank { "leer" }}', Portion '$portion'")
-        if (hasPhoto) append(", Foto vorhanden")
-        append(", Modus '$aiMode'")
+        append("Beschreibung '${description.ifBlank { "leer" }}', Portion '$portion', Modus '$aiMode'")
+        if (visual != null) append(", lokale Fotoanalyse: ${visual.debug}")
+        append(", ${FoodLearningBridge.personalHint(context, primaryFood)}")
     }
 
     return MealEstimate(
@@ -513,27 +591,99 @@ private data class FoodRule(
     val carbsNormalPortion: Int
 )
 
+private data class LocalVisualHint(
+    val label: String,
+    val suggestedRule: FoodRule?,
+    val defaultCarbs: Int,
+    val confidence: String,
+    val debug: String
+)
+
 private val foodRules = listOf(
     FoodRule("Pizza", listOf("pizza", "margherita", "salami pizza"), 90),
     FoodRule("Pasta/Nudeln", listOf("nudel", "nudeln", "pasta", "spaghetti", "penne", "lasagne"), 75),
     FoodRule("Reis", listOf("reis", "basmati", "jasminreis", "sushi"), 70),
     FoodRule("Kartoffeln", listOf("kartoffel", "kartoffeln", "püree", "pueree"), 45),
     FoodRule("Pommes", listOf("pommes", "fritten", "french fries"), 55),
-    FoodRule("Brot/Brötchen", listOf("brot", "brötchen", "broetchen", "toast", "semmel"), 40),
+    FoodRule("Brot/Brötchen", listOf("brot", "brötchen", "broetchen", "toast", "semmel", "baguette"), 40),
     FoodRule("Döner", listOf("döner", "doener", "kebab", "dürüm", "dueruem"), 75),
     FoodRule("Burger", listOf("burger", "cheeseburger", "hamburger"), 45),
-    FoodRule("Banane", listOf("banane"), 25),
-    FoodRule("Apfel", listOf("apfel"), 15),
+    FoodRule("Banane", listOf("banane", "banana"), 25),
+    FoodRule("Apfel", listOf("apfel", "apple"), 15),
     FoodRule("Müsli/Hafer", listOf("müsli", "muesli", "hafer", "porridge", "cornflakes"), 55),
-    FoodRule("Joghurt/Pudding", listOf("joghurt", "pudding", "high protein", "ehrmann", "protein"), 20),
-    FoodRule("Cola/Saft", listOf("cola", "saft", "limonade", "fanta", "sprite"), 30),
-    FoodRule("Schokolade", listOf("schokolade", "riegel", "snickers", "mars", "twix"), 35),
+    FoodRule("Joghurt/Pudding", listOf("joghurt", "yoghurt", "pudding", "high protein", "ehrmann", "protein"), 20),
+    FoodRule("Cola/Saft", listOf("cola", "saft", "juice", "limonade", "fanta", "sprite"), 30),
+    FoodRule("Schokolade", listOf("schokolade", "chocolate", "riegel", "snickers", "mars", "twix"), 35),
     FoodRule("Kuchen", listOf("kuchen", "torte", "muffin", "donut"), 45),
     FoodRule("Salat", listOf("salat", "gurke", "tomate"), 12)
 )
 
+private fun analyzeLocalPhoto(bitmap: Bitmap): LocalVisualHint {
+    val width = bitmap.width.coerceAtLeast(1)
+    val height = bitmap.height.coerceAtLeast(1)
+    val stepX = (width / 24).coerceAtLeast(1)
+    val stepY = (height / 24).coerceAtLeast(1)
+    var total = 0
+    var green = 0
+    var yellow = 0
+    var brown = 0
+    var red = 0
+    var white = 0
+    var dark = 0
+
+    var y = 0
+    while (y < height) {
+        var x = 0
+        while (x < width) {
+            val color = bitmap.getPixel(x, y)
+            val r = (color shr 16) and 0xff
+            val g = (color shr 8) and 0xff
+            val b = color and 0xff
+            total++
+            val brightness = (r + g + b) / 3
+            when {
+                g > r + 25 && g > b + 20 -> green++
+                r > 170 && g > 130 && b < 110 -> yellow++
+                r > 95 && g in 45..155 && b < 100 -> brown++
+                r > 150 && g < 110 && b < 100 -> red++
+                brightness > 205 -> white++
+                brightness < 65 -> dark++
+            }
+            x += stepX
+        }
+        y += stepY
+    }
+
+    fun ratio(value: Int): Double = if (total <= 0) 0.0 else value.toDouble() / total.toDouble()
+    val greenR = ratio(green)
+    val yellowR = ratio(yellow)
+    val brownR = ratio(brown)
+    val redR = ratio(red)
+    val whiteR = ratio(white)
+    val darkR = ratio(dark)
+
+    val rule = when {
+        greenR > 0.22 -> foodRules.first { it.name == "Salat" }
+        yellowR > 0.20 && brownR > 0.08 -> foodRules.first { it.name == "Pizza" }
+        yellowR > 0.24 -> foodRules.first { it.name == "Pasta/Nudeln" }
+        brownR > 0.22 -> foodRules.first { it.name == "Brot/Brötchen" }
+        redR > 0.18 && yellowR > 0.10 -> foodRules.first { it.name == "Pizza" }
+        whiteR > 0.35 -> foodRules.first { it.name == "Reis" }
+        darkR > 0.40 -> foodRules.first { it.name == "Schokolade" }
+        else -> null
+    }
+
+    val label = rule?.name ?: "gemischte oder unklare Mahlzeit"
+    val carbs = rule?.carbsNormalPortion ?: 45
+    val confidence = if (rule != null) "niedrig bis mittel · lokale Fotoanalyse v1" else "niedrig · lokale Fotoanalyse v1"
+    val debug = "grün ${percent(greenR)}, gelb ${percent(yellowR)}, braun ${percent(brownR)}, rot ${percent(redR)}, hell ${percent(whiteR)}"
+    return LocalVisualHint(label, rule, carbs, confidence, debug)
+}
+
+private fun percent(value: Double): String = "${(value * 100).roundToInt()}%"
+
 fun foodTrendText(trend: String): String {
-    return when (trend.lowercase()) {
+    return when (trend.lowercase(Locale.getDefault())) {
         "doubleup" -> "schnell steigend"
         "singleup" -> "steigend"
         "fortyfiveup" -> "leicht steigend"
@@ -570,9 +720,9 @@ private fun buildConfirmedEstimateText(
 
 private fun aiModeInfo(mode: String): String {
     return when (mode) {
-        "Gemini" -> "Gemini: Foto wird mit deinem Gemini API-Key an Google Gemini gesendet. Gut für Marken, Verpackungen und gemischte Teller."
-        "OpenAI" -> "OpenAI: Foto wird mit deinem OpenAI API-Key an OpenAI gesendet. Gut für detaillierte Bildbeschreibung und Plausibilitätsprüfung."
-        else -> "Lokal: keine Datenübertragung. Schätzung erfolgt über Beschreibung, Portion und lokale Regeln."
+        "Gemini" -> "Gemini: Foto wird mit deinem Gemini API-Key an Google Gemini gesendet. Gut für Marken, Verpackungen und gemischte Teller. Deine Bestätigung verbessert zusätzlich die lokale Schätzung."
+        "OpenAI" -> "OpenAI: Foto wird mit deinem OpenAI API-Key an OpenAI gesendet. Gut für detaillierte Bildbeschreibung. Deine Bestätigung verbessert zusätzlich die lokale Schätzung."
+        else -> "Lokal: keine Datenübertragung. Build 022 nutzt Beschreibung, Portion, einfache Fotoanalyse v1 und deine bestätigten Mahlzeiten."
     }
 }
 
@@ -639,17 +789,11 @@ private fun analyzeFoodWithGemini(
             val desc = parsed.optString("description", modelText)
             val confidence = parsed.optString("confidence", "mittel")
             val reason = parsed.optString("reason", "Gemini-Vision-Analyse")
-
-            val estimate = MealEstimate(
-                carbs = carbs,
-                confidence = confidence,
-                reason = reason,
-                primaryFood = primary,
-                seenDescription = desc
-            )
-            Handler(Looper.getMainLooper()).post { onDone(estimate, null) }
+            Handler(Looper.getMainLooper()).post {
+                onDone(MealEstimate(carbs, confidence, reason, primary, desc), null)
+            }
         } catch (e: Exception) {
-            Handler(Looper.getMainLooper()).post { onDone(null, "Gemini Fehler: ${e.message ?: "unbekannt"}") }
+            Handler(Looper.getMainLooper()).post { onDone(null, e.message ?: "unbekannt") }
         }
     }.start()
 }
@@ -700,17 +844,11 @@ private fun analyzeFoodOnline(
             val desc = parsed.optString("description", modelText)
             val confidence = parsed.optString("confidence", "mittel")
             val reason = parsed.optString("reason", "Online-Vision-Analyse")
-
-            val estimate = MealEstimate(
-                carbs = carbs,
-                confidence = confidence,
-                reason = reason,
-                primaryFood = primary,
-                seenDescription = desc
-            )
-            Handler(Looper.getMainLooper()).post { onDone(estimate, null) }
+            Handler(Looper.getMainLooper()).post {
+                onDone(MealEstimate(carbs, confidence, reason, primary, desc), null)
+            }
         } catch (e: Exception) {
-            Handler(Looper.getMainLooper()).post { onDone(null, "Online-KI Fehler: ${e.message ?: "unbekannt"}") }
+            Handler(Looper.getMainLooper()).post { onDone(null, e.message ?: "unbekannt") }
         }
     }.start()
 }
@@ -795,5 +933,5 @@ private fun extractJsonObject(text: String): String {
 }
 
 private fun formatOne(value: Double): String {
-    return String.format(java.util.Locale.GERMAN, "%.1f", value)
+    return String.format(Locale.GERMAN, "%.1f", value)
 }
