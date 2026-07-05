@@ -22,20 +22,31 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      - name: Decode keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > diamind-release-key.jks
+
+      - name: Create key.properties
+        run: |
+          echo "storeFile=../diamind-release-key.jks" > key.properties
+          echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" >> key.properties
+          echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> key.properties
+          echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> key.properties
+
       - name: Grant execute permission
         run: chmod +x gradlew
 
-      - name: Build debug APK
-        run: ./gradlew assembleDebug
+      - name: Build signed release APK
+        run: ./gradlew assembleRelease
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk DiaMind-debug.apk
+        run: cp app/build/outputs/apk/release/app-release.apk DiaMind-release.apk
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
           name: DiaMind Build ${{ github.run_number }}
-          files: DiaMind-debug.apk
+          files: DiaMind-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

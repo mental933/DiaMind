@@ -1,0 +1,8 @@
+de.diamind.ai.app-pngs-0 C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\build\generated\res\pngs\release
+de.diamind.ai.app-updated_navigation_xml-1 C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\build\generated\updated_navigation_xml\release
+de.diamind.ai.app-packageReleaseResources-2 C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\build\intermediates\incremental\release\packageReleaseResources\merged.dir
+de.diamind.ai.app-packageReleaseResources-3 C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\build\intermediates\incremental\release\packageReleaseResources\stripped.dir
+de.diamind.ai.app-release-4 C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\build\intermediates\merged_res\release\mergeReleaseResources
+de.diamind.ai.app-main-5 C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\main\res
+de.diamind.ai.app-release-6 C:\Users\Adam\AndroidStudioProjects\DiaMind2\app\src\release\res
+gradleHome-0 C:\Users\Adam\.gradle
