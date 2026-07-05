@@ -28,7 +28,7 @@ jobs:
 
       - name: Create key.properties
         run: |
-          echo "storeFile=../diamind-release-key.jks" > key.properties
+          echo "storeFile=./diamind-release-key.jks" > key.properties
           echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" >> key.properties
           echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> key.properties
           echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> key.properties
@@ -39,8 +39,15 @@ jobs:
       - name: Build signed release APK
         run: ./gradlew assembleRelease
 
-      - name: Rename APK
-        run: cp app/build/outputs/apk/release/app-release.apk DiaMind-release.apk
+      - name: Find APK
+        run: |
+          echo "Generated APK:"
+          find app/build/outputs -name "*.apk"
+
+      - name: Copy APK
+        run: |
+          APK=$(find app/build/outputs -name "*.apk" | head -n 1)
+          cp "$APK" DiaMind-release.apk
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
