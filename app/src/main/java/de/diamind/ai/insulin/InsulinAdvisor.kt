@@ -19,9 +19,11 @@ object InsulinAdvisor {
         if (loadText(context, "bolusInsulin", "").isBlank()) saveText(context, "bolusInsulin", "Lyumjev")
         if (loadText(context, "basalInsulin", "").isBlank()) saveText(context, "basalInsulin", "Tresiba")
         if (loadText(context, "bolusStep", "").isBlank()) saveText(context, "bolusStep", "1.0")
-        if (loadText(context, "targetMin", "").isBlank()) saveText(context, "targetMin", "80")
-        if (loadText(context, "targetMax", "").isBlank()) saveText(context, "targetMax", "160")
+        if (loadText(context, "targetMin", "").isBlank()) saveText(context, "targetMin", "90")
+        if (loadText(context, "targetMax", "").isBlank()) saveText(context, "targetMax", "130")
         if (loadText(context, "learningMealCount", "").isBlank()) saveText(context, "learningMealCount", "0")
+        if (loadText(context, "correctionFactor", "").isBlank()) saveText(context, "correctionFactor", "50")
+        if (loadText(context, "targetGlucose", "").isBlank()) saveText(context, "targetGlucose", "110")
         slots.forEach { slot ->
             if (loadText(context, slotKey(slot, "count"), "").isBlank()) saveText(context, slotKey(slot, "count"), "0")
             if (loadText(context, slotKey(slot, "high"), "").isBlank()) saveText(context, slotKey(slot, "high"), "0")
@@ -69,6 +71,41 @@ object InsulinAdvisor {
         return if (step >= 1.0) "${dose.roundToInt()}" else format(dose)
     }
 
+    fun activeInsulin(context: Context, nowMs: Long = System.currentTimeMillis()): Double {
+        val dose = loadText(context, "lastActualDose", "0").replace(',', '.').toDoubleOrNull() ?: 0.0
+        val timeMs = loadText(context, "lastBolusTimeMs", "0").toLongOrNull() ?: 0L
+        if (dose <= 0.0 || timeMs <= 0L) return 0.0
+        val durationHours = loadText(context, "insulinDurationHours", "4.0").replace(',', '.').toDoubleOrNull() ?: 4.0
+        val elapsedHours = (nowMs - timeMs).coerceAtLeast(0L).toDouble() / 3600000.0
+        if (elapsedHours >= durationHours) return 0.0
+        val remaining = 1.0 - (elapsedHours / durationHours)
+        return (dose * remaining).coerceAtLeast(0.0)
+    }
+
+    fun correctionSuggestion(context: Context, glucoseInput: String, trend: String): String {
+        initializeDefaults(context)
+        val glucose = glucoseInput.toIntOrNull() ?: return "Für eine Korrektur brauche ich einen aktuellen Glukosewert."
+        val target = loadText(context, "targetGlucose", "110").replace(',', '.').toDoubleOrNull() ?: 110.0
+        val correctionFactor = loadText(context, "correctionFactor", "50").replace(',', '.').toDoubleOrNull() ?: 50.0
+        val iob = activeInsulin(context)
+        val trendLower = trend.lowercase(Locale.getDefault())
+        val trendAddon = when {
+            trendLower.contains("doubleup") -> 1.0
+            trendLower.contains("singleup") || trendLower.contains("fortyfiveup") -> 0.5
+            trendLower.contains("doubledown") -> -1.0
+            trendLower.contains("singledown") || trendLower.contains("fortyfivedown") -> -0.5
+            else -> 0.0
+        }
+        val raw = ((glucose - target) / correctionFactor) + trendAddon - iob
+        val suggested = doseForKe(context, raw.coerceAtLeast(0.0), 1.0)
+        return when {
+            glucose <= 100 && trendLower.contains("down") -> "📉 Hypo-Frühwarnung: $glucose mg/dL und fallend. Eher schnelle KH prüfen statt Bolus."
+            glucose < target -> "Keine Korrektur: $glucose mg/dL liegt unter Zielwert $target mg/dL."
+            suggested <= 0.0 -> "Noch keine Korrektur: rechnerisch wirkt noch genug Restinsulin (${format(iob)} IE)."
+            else -> "🔴 Korrekturvorschlag: ${formatDose(context, suggested)} IE\nBasis: $glucose mg/dL · Ziel ${format(target)} · Korrekturfaktor ${format(correctionFactor)} mg/dL pro IE · IOB ${format(iob)} IE."
+        }
+    }
+
     fun preMealTimingAdvice(context: Context, glucoseInput: String, trend: String, carbs: Int = 0): String {
         val glucose = glucoseInput.toIntOrNull()
         val trendLower = trend.lowercase(Locale.getDefault())
@@ -108,6 +145,8 @@ object InsulinAdvisor {
         saveText(context, "lastMealSlot", slot)
         saveText(context, "lastRecommendedDose", format(recommendedDose))
         saveText(context, "lastActualDose", format(actualDose))
+        saveText(context, "lastBolusTimeMs", System.currentTimeMillis().toString())
+        saveText(context, "activeInsulin", format(activeInsulin(context)))
         saveText(context, "lastMealKe", format(ke))
         saveText(context, "lastMealCarbs", carbs.toString())
         saveText(context, "lastMealStatus", status)

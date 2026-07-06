@@ -15,11 +15,6 @@ object DiaMindBrain {
         val text = input.trim()
         if (text.isBlank()) return "Ich höre zu. Schreib oder sprich einfach, was du brauchst."
 
-        if (text.lowercase().startsWith("merke")) {
-            val note = text.substringAfter(':', text).removePrefix("Merke").removePrefix("merke").trim(' ', ',', ':', '.')
-            return saveRoadmapNote(context, note.ifBlank { text })
-        }
-
         if (text.lowercase().startsWith("merke dir:")) {
             val content = text.substringAfter(":").trim()
             val parts = content.split("=")
@@ -34,7 +29,14 @@ object DiaMindBrain {
             }
         }
 
+        if (text.lowercase().startsWith("merke")) {
+            val note = text.substringAfter(':', text).removePrefix("Merke").removePrefix("merke").trim(' ', ',', ':', '.')
+            return saveRoadmapNote(context, note.ifBlank { text })
+        }
+
         detectTherapyUpdate(context, text)?.let { return it }
+
+        detectCorrectionRequest(context, text)?.let { return it }
 
         detectMealCorrection(context, text)?.let { return it }
 
@@ -71,8 +73,10 @@ object DiaMindBrain {
             text.contains("essen", true) || text.contains("mahlzeit", true) || text.contains("ke", true) ->
                 "Gehe auf Essen oder nutze die Kamera auf der Startseite. Nach der Schätzung kannst du KE und Bolus korrigieren und übernehmen. Erst dann lernt DiaMind daraus."
 
-            text.contains("insulin", true) ->
-                "Dein Therapieprofil kann per Chat aktualisiert werden. Beispiel: 'Ich nehme Lyumjev als Bolus und Tresiba 26 IE abends.'"
+            text.contains("insulin", true) || text.contains("restinsulin", true) || text.contains("iob", true) -> {
+                val iob = InsulinAdvisor.activeInsulin(context)
+                "Restinsulin aktuell rechnerisch: ${InsulinAdvisor.format(iob)} IE. Du kannst dein Therapieprofil direkt per Chat ändern, z. B.: 'Ich nehme Lyumjev als Bolus und Tresiba 26 IE abends.'"
+            }
 
             text.contains("xdrip", true) ->
                 "xDrip ist lokal angebunden. DiaMind nutzt Glukose und Trend für Hinweise, Spritz-Ess-Abstand und Lernbewertung."
@@ -84,7 +88,55 @@ object DiaMindBrain {
                 "Ich heiße DiaMind. Ich soll mit dir lernen, nicht über dich entscheiden."
 
             else ->
-                "Das weiß ich noch nicht sicher. Wenn es dauerhaft wichtig ist, schreibe: Merke: ... Dann landet es in der Build-Liste."
+                "Ich habe dich noch nicht eindeutig verstanden. Schreib einfach wie im Alltag, z. B. '3 Stücke Pizza', 'doch nur 2 Stück', 'ich habe 8 IE gespritzt', 'mein Wert steigt auf 180' oder 'rechne Korrektur'. Ich versuche dann direkt Bolus, SEA und Erklärung zusammenzufassen."
+        }
+    }
+
+
+    private fun actionFirstMealMessage(
+        context: Context,
+        doseText: String,
+        timing: String,
+        headline: String,
+        details: String,
+        note: String = ""
+    ): String {
+        val sea = actionSea(timing)
+        val shortNote = note.ifBlank { "Wenn etwas nicht stimmt, schreib es direkt in den Chat." }
+        return """
+            ━━━━━━━━━━━━━━
+            🔴 $doseText IE spritzen
+            ⏱ $sea
+            💬 $headline
+
+            Details:
+            $details
+
+            $shortNote
+        """.trimIndent()
+    }
+
+    private fun actionSea(timing: String): String {
+        val lower = timing.lowercase(Locale.getDefault())
+        return when {
+            lower.contains("erst essen") || lower.contains("niedrig") || lower.contains("fall") -> "erst essen / keinen Vorabstand"
+            lower.contains("10") -> "10 Minuten warten"
+            lower.contains("5") -> "5 Minuten warten"
+            lower.contains("erhöht") || lower.contains("steig") -> "jetzt spritzen, kurz warten"
+            lower.contains("direkt") || lower.contains("sofort") -> "jetzt / zum ersten Bissen"
+            else -> "jetzt / kurz prüfen"
+        }
+    }
+
+    private fun shortGlucoseReason(glucose: String, trend: String, carbs: Int): String {
+        val g = glucose.toIntOrNull()
+        val t = trendLabelShort(trend)
+        return when {
+            g != null && g < 100 && t.contains("fall") -> "Wert ist niedrig/fallend. Erst essen, nicht lange warten."
+            g != null && g >= 180 -> "Wert ist erhöht. Bolus nicht aufschieben."
+            t.contains("steigend") -> "Wert steigt. Ein kurzer Abstand kann sinnvoll sein."
+            carbs >= 70 -> "Viele KH. Verlauf später nochmal prüfen."
+            else -> "Normale Mahlzeit. Erst bestätigen, dann lerne ich daraus."
         }
     }
 
@@ -125,34 +177,29 @@ object DiaMindBrain {
         saveText(context, "lastMealKe", String.format(Locale.GERMAN, "%.1f", ke))
         saveText(context, "lastRecommendedDose", InsulinAdvisor.formatDose(context, dose))
 
-        val answer = """
-            🔴 Empfehlung: ${InsulinAdvisor.formatDose(context, dose)} IE
-            ⏱ SEA: ${shortTiming(timing)}
-
-            Ich rechne mit: $foodName.
+        val details = """
+            Essen: $foodName
             KH: ca. $carbs g · KE: ${String.format(Locale.GERMAN, "%.1f", ke)}
             Faktor: $slot · ${String.format(Locale.GERMAN, "%.1f", factor)} IE/KE
             Glukose: $glucose mg/dL · Trend: ${trendLabelShort(trend)}
-
-            $timing
-
-            Du kannst direkt korrigieren: „es waren 3 Stücke“, „nur halbe Pizza“, „das waren 60 g KH“ oder „ich habe 10 IE gespritzt“. Mit Bestätigen speichert DiaMind die Mahlzeit zum Lernen.
         """.trimIndent()
+        val answer = actionFirstMealMessage(
+            context = context,
+            doseText = InsulinAdvisor.formatDose(context, dose),
+            timing = timing,
+            headline = shortGlucoseReason(glucose, trend, carbs),
+            details = details,
+            note = "Korrektur: z. B. „60 g KH“, „halbe Portion“ oder „ich habe 8 IE gespritzt“."
+        )
         saveText(context, "assistantBubble", answer)
-        appendSystemNews(context, "Mahlzeit", "$foodName · $carbs g KH · ${InsulinAdvisor.formatDose(context, dose)} IE")
         return answer
     }
 
     private fun pieceMultiplier(text: String, foods: List<String>): Double {
-        val number = Regex("(\\d{1,2})\\s*(stück|stücke|stueck|scheiben|teile)", RegexOption.IGNORE_CASE)
-            .find(text)
-            ?.groupValues
-            ?.getOrNull(1)
-            ?.toDoubleOrNull()
-            ?: return 1.0
+        val number = extractPieceCount(text) ?: return 1.0
         val primary = foods.joinToString(" ").lowercase(Locale.getDefault())
         return when {
-            primary.contains("pizza") -> (number / 4.0).coerceIn(0.4, 2.0)
+            primary.contains("pizza") -> (number / 4.0).coerceIn(0.25, 2.0)
             primary.contains("brot") -> (number / 2.0).coerceIn(0.5, 2.5)
             primary.contains("kartoff") -> (number / 3.0).coerceIn(0.5, 2.0)
             else -> 1.0
@@ -177,16 +224,42 @@ object DiaMindBrain {
     }
 
 
+    private fun detectCorrectionRequest(context: Context, text: String): String? {
+        val lower = text.lowercase(Locale.getDefault())
+        val wantsCorrection = lower.contains("korrigier") || lower.contains("korrektur") || lower.contains("nachsprit") || lower.contains("zu hoch") || lower.contains("steigt") || lower.contains("steigend")
+        val glucoseMention = Regex("""\b(\d{2,3})\b""").find(lower)?.groupValues?.getOrNull(1)
+        if (!wantsCorrection && glucoseMention == null) return null
+        if (lower.contains("pizza") || lower.contains("stück") || lower.contains("stueck") || lower.contains("essen")) return null
+        val glucose = glucoseMention ?: loadText(context, "glucose", "?")
+        val trend = when {
+            lower.contains("schnell") && lower.contains("steig") -> "DoubleUp"
+            lower.contains("steig") -> "SingleUp"
+            lower.contains("schnell") && lower.contains("fall") -> "DoubleDown"
+            lower.contains("fall") -> "SingleDown"
+            else -> loadText(context, "glucoseTrend", "manual")
+        }
+        val correction = InsulinAdvisor.correctionSuggestion(context, glucose, trend)
+        val doseText = Regex("""(\d{1,2})(?:[,.](\d))?\s*IE""").find(correction)?.value?.substringBefore(" ")
+        if (doseText != null) saveText(context, "lastRecommendedDose", doseText)
+        val answer = """
+            ━━━━━━━━━━━━━━
+            🔴 Korrektur prüfen
+            💉 $correction
+            ⏱ jetzt, wenn kein starkes Restinsulin wirkt
+            💬 Kurz: Wert/Trend sprechen für eine Korrektur. Unten mit +/− anpassen und bestätigen.
+        """.trimIndent()
+        saveText(context, "assistantBubble", answer)
+        return answer
+    }
+
     private fun detectMealCorrection(context: Context, text: String): String? {
         val lower = text.lowercase(Locale.getDefault())
         val lastFood = loadText(context, "lastMealDescription", "")
         val lastCarbs = loadText(context, "lastMealCarbs", "").toIntOrNull()
         val lastDose = loadText(context, "lastRecommendedDose", "").replace(',', '.').toDoubleOrNull()
-        val actualDose = extractDose(text)
-        val pieceCount = extractPieceCount(text)
 
         if (lower in listOf("bestätigen", "bestaetigen", "ok", "passt", "stimmt", "bestätige", "bestaetige")) {
-            val carbs = lastCarbs ?: return "Ich habe noch keine offene Mahlzeit zum Bestätigen. Sag mir z. B. 'Pizza' oder mache ein Foto."
+            val carbs = lastCarbs ?: return "Ich habe noch keine offene Mahlzeit zum Bestätigen."
             val slot = InsulinAdvisor.currentSlot()
             val ke = carbs / 10.0
             val factor = InsulinAdvisor.factorForSlot(context, slot)
@@ -194,34 +267,68 @@ object DiaMindBrain {
             val glucose = loadText(context, "glucose", "?")
             val trend = loadText(context, "glucoseTrend", "manual")
             val record = InsulinAdvisor.saveMealAssumption(context, lastFood, carbs, ke, recommended, "", slot, glucose, trend)
-            appendSystemNews(context, "Bestätigt", "$lastFood · $carbs g KH · ${InsulinAdvisor.formatDose(context, recommended)} IE")
-            return "✅ Bestätigt und gespeichert.\n\n$record"
+            return "━━━━━━━━━━━━━━\n✅ Gespeichert\n💉 ${InsulinAdvisor.formatDose(context, recommended)} IE\n💬 Mahlzeit gespeichert. Ich nutze das zum Lernen.\n\nDetails:\n$record"
         }
 
         if (lower.contains("mehr bolus") || lower == "+" || lower.contains("plus bolus")) {
             val current = lastDose ?: return "Ich habe noch keinen aktuellen Bolusvorschlag zum Erhöhen."
             val updated = current + 1.0
             saveText(context, "lastRecommendedDose", InsulinAdvisor.formatDose(context, updated))
-            appendSystemNews(context, "Bolus +", "Vorschlag auf ${InsulinAdvisor.formatDose(context, updated)} IE")
             return "🔴 Bolus auf ${InsulinAdvisor.formatDose(context, updated)} IE erhöht. Wenn das passt, drücke Bestätigen."
         }
         if (lower.contains("weniger bolus") || lower == "-" || lower.contains("minus bolus")) {
             val current = lastDose ?: return "Ich habe noch keinen aktuellen Bolusvorschlag zum Senken."
             val updated = (current - 1.0).coerceAtLeast(0.0)
             saveText(context, "lastRecommendedDose", InsulinAdvisor.formatDose(context, updated))
-            appendSystemNews(context, "Bolus −", "Vorschlag auf ${InsulinAdvisor.formatDose(context, updated)} IE")
             return "🔴 Bolus auf ${InsulinAdvisor.formatDose(context, updated)} IE gesenkt. Wenn das passt, drücke Bestätigen."
+        }
+
+        val actualDose = extractDose(text)
+        val pieceCountEarly = extractPieceCount(text)
+        val correctedCarbsFromPieces = if (pieceCountEarly != null && (lastFood.isNotBlank() || lower.contains("pizza"))) {
+            val baseFood = (lastFood.ifBlank { text }).lowercase(Locale.getDefault())
+            when {
+                baseFood.contains("pizza") -> (pieceCountEarly * 22.5).roundToInt().coerceAtLeast(1)
+                baseFood.contains("kartoff") -> (pieceCountEarly * 15).roundToInt().coerceAtLeast(1)
+                baseFood.contains("brot") -> (pieceCountEarly * 20).roundToInt().coerceAtLeast(1)
+                else -> lastCarbs
+            }
+        } else null
+
+        if (actualDose != null && (lower.contains("gespritzt") || lower.contains("genommen") || lower.contains("gegeben"))) {
+            val carbs = correctedCarbsFromPieces ?: lastCarbs
+                ?: return "Ich speichere die gespritzten ${InsulinAdvisor.formatDose(context, actualDose)} IE, brauche aber noch Mahlzeit/KH dazu. Sag z. B.: 'Pizza 3 Stücke' oder '60 g KH'."
+            val slot = InsulinAdvisor.currentSlot()
+            val ke = carbs / 10.0
+            val factor = InsulinAdvisor.factorForSlot(context, slot)
+            val recommended = InsulinAdvisor.doseForKe(context, ke, factor)
+            val glucose = loadText(context, "glucose", "?")
+            val trend = loadText(context, "glucoseTrend", "manual")
+            val food = when {
+                lower.contains("pizza") -> "Pizza"
+                lastFood.isNotBlank() -> lastFood
+                else -> "Mahlzeit"
+            }
+            saveText(context, "lastMealDescription", food)
+            saveText(context, "lastMealCarbs", carbs.toString())
+            saveText(context, "lastMealKe", String.format(Locale.GERMAN, "%.1f", ke))
+            saveText(context, "lastRecommendedDose", InsulinAdvisor.formatDose(context, recommended))
+            val record = InsulinAdvisor.saveMealAssumption(context, food, carbs, ke, recommended, actualDose.toString(), slot, glucose, trend)
+            val delta = actualDose - recommended
+            val note = when {
+                delta < -2.0 -> "Du hast weniger als die rechnerische Empfehlung gespritzt. Ich merke mir das und beobachte den späteren Verlauf als Lernsignal."
+                delta > 2.0 -> "Du hast mehr als die rechnerische Empfehlung gespritzt. Ich merke mir das, bitte Verlauf eng beobachten."
+                else -> "Das liegt nahe an der Empfehlung."
+            }
+            return "━━━━━━━━━━━━━━\n✅ Gespeichert\n💉 ${InsulinAdvisor.formatDose(context, actualDose)} IE\n💬 $note\n\nDetails:\n$record"
         }
 
         val explicitCarbs = Regex("(\\d{1,3})\\s*(g|gramm)?\\s*(kh|kohlenhydrat)", RegexOption.IGNORE_CASE).find(text)?.groupValues?.getOrNull(1)?.toIntOrNull()
         if (explicitCarbs != null) {
-            val answer = recalcFromCarbs(context, explicitCarbs, "Ich habe deine KH-Korrektur übernommen.")
-            if (actualDose != null && (lower.contains("gespritzt") || lower.contains("genommen") || lower.contains("gegeben"))) {
-                return saveActualDoseAfterCorrection(context, explicitCarbs, actualDose, answer)
-            }
-            return answer
+            return recalcFromCarbs(context, explicitCarbs, "Ich habe deine KH-Korrektur übernommen.")
         }
 
+        val pieceCount = extractPieceCount(text)
         if (pieceCount != null && lastFood.isNotBlank()) {
             val baseFood = lastFood.lowercase(Locale.getDefault())
             val carbs = when {
@@ -230,51 +337,15 @@ object DiaMindBrain {
                 baseFood.contains("brot") -> (pieceCount * 20).roundToInt().coerceAtLeast(1)
                 else -> lastCarbs ?: return null
             }
-            val answer = recalcFromCarbs(context, carbs, "Okay, ich rechne neu mit ${pieceCount.cleanNumber()} Stück von $lastFood.")
-            if (actualDose != null && (lower.contains("gespritzt") || lower.contains("genommen") || lower.contains("gegeben"))) {
-                return saveActualDoseAfterCorrection(context, carbs, actualDose, answer)
-            }
-            return answer
+            return recalcFromCarbs(context, carbs, "Okay, ich rechne neu mit $pieceCount Stück von $lastFood.")
         }
 
         if ((lower.contains("halb") || lower.contains("halbe")) && lastCarbs != null) {
-            val carbs = (lastCarbs * 0.5).roundToInt().coerceAtLeast(1)
-            val answer = recalcFromCarbs(context, carbs, "Okay, ich rechne neu mit der halben Portion.")
-            if (actualDose != null && (lower.contains("gespritzt") || lower.contains("genommen") || lower.contains("gegeben"))) {
-                return saveActualDoseAfterCorrection(context, carbs, actualDose, answer)
-            }
-            return answer
-        }
-
-        if (actualDose != null && (lower.contains("gespritzt") || lower.contains("genommen") || lower.contains("gegeben"))) {
-            val carbs = lastCarbs ?: return "Ich speichere die gespritzten ${InsulinAdvisor.formatDose(context, actualDose)} IE, brauche aber noch die Mahlzeit/KH dazu. Schreib z. B. '3 Stücke Pizza' oder '60 g KH'."
-            return saveActualDoseAfterCorrection(context, carbs, actualDose, "")
+            return recalcFromCarbs(context, (lastCarbs * 0.5).roundToInt().coerceAtLeast(1), "Okay, ich rechne neu mit der halben Portion.")
         }
 
         return null
     }
-
-    private fun saveActualDoseAfterCorrection(context: Context, carbs: Int, actualDose: Double, prefix: String): String {
-        val lastFood = loadText(context, "lastMealDescription", "")
-        val slot = InsulinAdvisor.currentSlot()
-        val ke = carbs / 10.0
-        val factor = InsulinAdvisor.factorForSlot(context, slot)
-        val recommended = InsulinAdvisor.doseForKe(context, ke, factor)
-        val glucose = loadText(context, "glucose", "?")
-        val trend = loadText(context, "glucoseTrend", "manual")
-        val record = InsulinAdvisor.saveMealAssumption(context, lastFood, carbs, ke, recommended, actualDose.toString(), slot, glucose, trend)
-        val delta = actualDose - recommended
-        val note = when {
-            delta < -2.0 -> "Du hast weniger als den Vorschlag angegeben. Ich beobachte später, ob der Wert stärker steigt."
-            delta > 2.0 -> "Du hast mehr als den Vorschlag angegeben. Bitte Verlauf beobachten, besonders wenn der Trend dreht."
-            else -> "Das liegt nahe am aktuellen Vorschlag."
-        }
-        appendSystemNews(context, "Bolus gespeichert", "$lastFood · $carbs g KH · ${InsulinAdvisor.formatDose(context, actualDose)} IE")
-        val intro = if (prefix.isBlank()) "" else "$prefix\n\n"
-        return intro + "✅ Gespeichert: ${InsulinAdvisor.formatDose(context, actualDose)} IE gespritzt.\n$note\n\n$record"
-    }
-
-    private fun Double.cleanNumber(): String = if (this % 1.0 == 0.0) this.roundToInt().toString() else String.format(Locale.GERMAN, "%.1f", this)
 
     private fun recalcFromCarbs(context: Context, carbs: Int, intro: String): String {
         val slot = InsulinAdvisor.currentSlot()
@@ -287,20 +358,20 @@ object DiaMindBrain {
         saveText(context, "lastMealCarbs", carbs.toString())
         saveText(context, "lastMealKe", String.format(Locale.GERMAN, "%.1f", ke))
         saveText(context, "lastRecommendedDose", InsulinAdvisor.formatDose(context, dose))
-        val answer = """
+        val details = """
             $intro
-
-            🔴 Neue Empfehlung: ${InsulinAdvisor.formatDose(context, dose)} IE
-            ⏱ SEA: ${shortTiming(timing)}
-
             KH: ca. $carbs g · KE: ${String.format(Locale.GERMAN, "%.1f", ke)}
             Faktor: $slot · ${String.format(Locale.GERMAN, "%.1f", factor)} IE/KE
             Glukose: $glucose mg/dL · Trend: ${trendLabelShort(trend)}
-
-            $timing
         """.trimIndent()
+        val answer = actionFirstMealMessage(
+            context = context,
+            doseText = InsulinAdvisor.formatDose(context, dose),
+            timing = timing,
+            headline = "Neu gerechnet. Unten kannst du direkt bestätigen.",
+            details = details
+        )
         saveText(context, "assistantBubble", answer)
-        appendSystemNews(context, "Korrektur", "$carbs g KH · ${InsulinAdvisor.formatDose(context, dose)} IE")
         return answer
     }
 
@@ -382,13 +453,6 @@ object DiaMindBrain {
         val result = "Therapieprofil aktualisiert:\n" + messages.distinct().joinToString("\n") + "\n\nBitte prüfe die Angaben im Diabetes-Profil."
         saveText(context, "assistantBubble", result)
         return result
-    }
-
-    private fun appendSystemNews(context: Context, title: String, body: String) {
-        val time = SimpleDateFormat("dd.MM. HH:mm", Locale.getDefault()).format(Date())
-        val old = loadText(context, "systemNews", "")
-        val line = "$time · $title\n$body"
-        saveText(context, "systemNews", (line + "\n" + old).lines().take(8).joinToString("\n"))
     }
 
     private fun saveRoadmapNote(context: Context, note: String): String {

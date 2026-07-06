@@ -1,8 +1,8 @@
 1<?xml version="1.0" encoding="utf-8"?>
 2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
 3    package="de.diamind.ai"
-4    android:versionCode="30"
-5    android:versionName="1.0-build-030-guardian-one-screen" >
+4    android:versionCode="39"
+5    android:versionName="1.0-build-039-action-first" >
 6
 7    <uses-sdk
 7-->INJECTED
