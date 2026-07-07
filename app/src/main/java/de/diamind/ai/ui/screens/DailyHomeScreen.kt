@@ -71,6 +71,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import de.diamind.ai.ai.DiaMindBrain
+import de.diamind.ai.ai.RecommendationFormatter
+import de.diamind.ai.data.Statistics
 import de.diamind.ai.insulin.InsulinAdvisor
 import de.diamind.ai.storage.Preferences.loadLong
 import de.diamind.ai.storage.Preferences.loadText
@@ -220,14 +222,7 @@ fun DailyHomeScreen(context: Context, onOpenSettings: () -> Unit) {
             saveText(context, "lastBolusRecord", "$now · Manueller Bolus: ${InsulinAdvisor.formatDose(context, selectedDose)} IE · Glukose $glucoseNow mg/dL · Trend $trendNow")
             "Manueller Bolus gespeichert: ${InsulinAdvisor.formatDose(context, selectedDose)} IE. Ich nutze das später für Restinsulin/Guardian."
         }
-        val message = """
-            ━━━━━━━━━━━━━━
-            ✅ ${InsulinAdvisor.formatDose(context, selectedDose)} IE gespeichert
-            💬 Bestätigung übernommen. Ich nutze diese Mahlzeit für den Lernverlauf.
-
-            Details:
-            $record
-        """.trimIndent()
+        val message = "Gespeichert: ${InsulinAdvisor.formatDose(context, selectedDose)} IE. Ich nutze das fuer den Lernverlauf.\n\nDetails:\n$record"
         appendAssistantMessage(message)
     }
 
@@ -343,8 +338,10 @@ private fun GlucoseHeroCard(context: Context, glucose: String, trend: String, gl
     val hba1c = loadText(context, "hba1c", "6.8")
     val lastDose = loadText(context, "lastActualDose", "?")
     val computedIob = InsulinAdvisor.activeInsulin(context)
-    if (computedIob > 0.05) saveText(context, "activeInsulin", InsulinAdvisor.format(computedIob))
-    val iob = if (computedIob > 0.05) InsulinAdvisor.format(computedIob) else loadText(context, "activeInsulin", "?")
+    val hasRealIob = (loadText(context, "lastBolusTimeMs", "0").toLongOrNull() ?: 0L) > 0L && computedIob > 0.05
+    if (hasRealIob) saveText(context, "activeInsulin", InsulinAdvisor.format(computedIob))
+    val iob = if (hasRealIob) InsulinAdvisor.format(computedIob) else "—"
+    val hba1cPreview = hba1cWindowsText(context)
     GlassCard(
         brush = Brush.linearGradient(
             listOf(Color(0xFF12182E), Color(0xFF080D1D), Color(0xFF151025))
@@ -364,9 +361,11 @@ private fun GlucoseHeroCard(context: Context, glucose: String, trend: String, gl
         Spacer(Modifier.height(5.dp))
         Row(modifier = Modifier.fillMaxWidth()) {
             StatBlock("HbA1c", "$hba1c %", DiaMindCyan, Modifier.weight(1f))
-            StatBlock("IOB", if (iob == "?" || iob == "0") "—" else "$iob IE", DiaMindPurple, Modifier.weight(1f))
+            StatBlock("IOB", if (iob == "—") "—" else "$iob IE", DiaMindPurple, Modifier.weight(1f))
             StatBlock("Bolus", if (lastDose == "?" || lastDose == "0") "—" else "$lastDose IE", Color(0xFFFF7A59), Modifier.weight(1f))
         }
+        Spacer(Modifier.height(4.dp))
+        Text(hba1cPreview, color = DiaMindMuted, fontSize = 10.sp)
     }
 }
 
@@ -424,7 +423,7 @@ private fun NewsCard(context: Context, modifier: Modifier) {
     val news = loadText(
         context,
         "newsFeed",
-        "Heute · Build 035 aktiv\nGuardian: Korrektur- und Hypo-Hinweise verbessert\nBrain: Chat reagiert stärker auf Mahlzeit/Korrektur"
+        "Heute · Build 040 aktiv\nChat: klare Bolus-Karten\nFoto: ehrlicher bei Unsicherheit\nGuardian: weniger doppelte Hinweise"
     )
     Column(
         modifier = modifier
@@ -553,7 +552,7 @@ private fun AssistantCard(
                     }
                     Spacer(Modifier.height(8.dp))
                 }
-                ChatTranscript(if (chat.isBlank()) "DiaMind:\n$bubble" else chat)
+                ChatTranscript(if (chat.isBlank()) "DiaMind:\n$bubble" else chat, lastPhoto)
             }
         }
         Spacer(Modifier.height(10.dp))
@@ -607,7 +606,7 @@ private fun AssistantCard(
 
 
 @Composable
-private fun ChatTranscript(raw: String) {
+private fun ChatTranscript(raw: String, lastPhoto: Bitmap?) {
     val entries = remember(raw) { parseChatEntries(raw) }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         entries.forEach { entry ->
@@ -620,10 +619,10 @@ private fun ChatTranscript(raw: String) {
                     modifier = Modifier
                         .fillMaxWidth(if (isUser) 0.86f else 0.96f)
                         .clip(RoundedCornerShape(18.dp))
-                        .background(if (isUser) DiaMindPurple.copy(alpha = 0.22f) else Color(0xFF151B34))
+                        .background(if (entry.isRecommendation) Color(0xFF1A1020) else if (isUser) DiaMindPurple.copy(alpha = 0.22f) else Color(0xFF151B34))
                         .border(
                             1.dp,
-                            if (isUser) DiaMindPurple.copy(alpha = 0.45f) else DiaMindCyan.copy(alpha = 0.20f),
+                            if (entry.isRecommendation) DiaMindRed.copy(alpha = 0.60f) else if (isUser) DiaMindPurple.copy(alpha = 0.45f) else DiaMindCyan.copy(alpha = 0.20f),
                             RoundedCornerShape(18.dp)
                         )
                         .padding(12.dp)
@@ -642,7 +641,27 @@ private fun ChatTranscript(raw: String) {
                             fontSize = 11.sp
                         )
                     }
+                    if (entry.hasPhoto && lastPhoto != null) {
+                        Spacer(Modifier.height(8.dp))
+                        Image(
+                            bitmap = lastPhoto.asImageBitmap(),
+                            contentDescription = "Essensfoto",
+                            modifier = Modifier
+                                .size(68.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(14.dp))
+                        )
+                    }
                     Spacer(Modifier.height(5.dp))
+                    if (entry.isRecommendation) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .background(DiaMindRed.copy(alpha = 0.55f))
+                        )
+                        Spacer(Modifier.height(8.dp))
+                    }
                     Text(
                         entry.text,
                         color = Color.White,
@@ -659,7 +678,9 @@ private data class ChatEntry(
     val isUser: Boolean,
     val author: String,
     val stamp: String,
-    val text: String
+    val text: String,
+    val isRecommendation: Boolean,
+    val hasPhoto: Boolean
 )
 
 private fun parseChatEntries(raw: String): List<ChatEntry> {
@@ -668,13 +689,20 @@ private fun parseChatEntries(raw: String): List<ChatEntry> {
     val result = mutableListOf<ChatEntry>()
     val regex = Regex("""(?m)^(Du|DiaMind)(?: · ([^:]+))?:\s*$""")
     val matches = regex.findAll(normalized).toList()
-    if (matches.isEmpty()) return listOf(ChatEntry(false, "DiaMind", "", normalized))
+    if (matches.isEmpty()) return listOf(ChatEntry(false, "DiaMind", "", normalized, normalized.startsWith("🔴 Bolus:"), false))
+    var pendingPhoto = false
     matches.forEachIndexed { index, match ->
         val nextStart = matches.getOrNull(index + 1)?.range?.first ?: normalized.length
         val role = match.groupValues[1]
         val stamp = match.groupValues.getOrNull(2).orEmpty().ifBlank { "früher" }
         val body = normalized.substring(match.range.last + 1, nextStart).trim()
-        if (body.isNotBlank()) result += ChatEntry(role == "Du", role, stamp, body)
+        if (body.isNotBlank()) {
+            val isPhotoMarker = role == "Du" && body.contains("[Foto aufgenommen]")
+            val attachesPhoto = role == "DiaMind" && pendingPhoto
+            if (!isPhotoMarker) result += ChatEntry(role == "Du", role, stamp, body, body.startsWith("🔴 Bolus:"), attachesPhoto)
+            pendingPhoto = isPhotoMarker || (pendingPhoto && role == "Du")
+            if (role == "DiaMind") pendingPhoto = false
+        }
     }
     return result.takeLast(18)
 }
@@ -726,6 +754,30 @@ private fun glucoseHistoryTimedPoints(context: Context, currentGlucose: String):
     )
 }
 
+private fun hba1cWindowsText(context: Context): String {
+    val raw = loadText(context, "glucoseHistory", "")
+    val now = System.currentTimeMillis()
+    val values = raw.split(";").mapNotNull { entry ->
+        val ts = entry.substringBefore(":").toLongOrNull() ?: return@mapNotNull null
+        val value = entry.substringAfter(":", "").toIntOrNull() ?: return@mapNotNull null
+        ts to value
+    }
+    fun window(days: Int): String {
+        val minTs = now - days * 24L * 60L * 60L * 1000L
+        val inWindow = values.filter { it.first >= minTs }.map { it.second }
+        if (inWindow.size < 6) return "${daysLabel(days)}: sammelt Daten"
+        val avg = inWindow.average().roundToInt()
+        return "${daysLabel(days)}: eHbA1c ${String.format(Locale.GERMAN, "%.1f", Statistics.estimatedHba1cFromAverageMgDl(avg))}%"
+    }
+    return listOf(window(1), window(7), window(30)).joinToString(" · ")
+}
+
+private fun daysLabel(days: Int): String = when (days) {
+    1 -> "24h"
+    7 -> "7T"
+    else -> "30T"
+}
+
 
 
 private fun analyzePhotoForHome(context: Context, bitmap: Bitmap, onDone: (String) -> Unit) {
@@ -753,11 +805,11 @@ private fun analyzePhotoForHome(context: Context, bitmap: Bitmap, onDone: (Strin
 
 private fun cautiousLocalPlateEstimate(): MealEstimate {
     return MealEstimate(
-        carbs = 60,
-        confidence = "niedrig bis mittel",
-        reason = "Lokaler Fallback: DiaMind sieht nur, dass ein Foto vorhanden ist. Statt eine falsche Marke zu erfinden, wird ein gemischter Teller mit sichtbarer Beilage/Brot vorsichtig angesetzt. Bitte im Chat korrigieren, wenn es weniger oder mehr war.",
-        primaryFood = "Gemischter Teller",
-        seenDescription = "Foto einer Mahlzeit. Vermutlich Fleisch/Protein plus Kohlenhydrat-Beilage wie Kartoffeln, Brot, Reis, Nudeln oder Püree. Online-Gemini kann daraus deutlich genauer die einzelnen Bestandteile erkennen."
+        carbs = 0,
+        confidence = "unsicher",
+        reason = "Ohne Online-Bildanalyse kann DiaMind das Foto nicht verlaesslich erkennen.",
+        primaryFood = "Unklare Mahlzeit",
+        seenDescription = "Ich sehe, dass ein Foto aufgenommen wurde, kann lokal aber keine sicheren Lebensmittel erkennen. Bitte beschreibe kurz, was darauf ist, oder nutze Gemini mit API-Key."
     )
 }
 
@@ -770,8 +822,6 @@ private fun buildHomeMealMessage(context: Context, estimate: MealEstimate, sourc
     val dose = InsulinAdvisor.doseForKe(context, ke, factor)
     val doseText = InsulinAdvisor.formatDose(context, dose)
     val sea = InsulinAdvisor.preMealTimingAdvice(context, glucose, trend, estimate.carbs)
-        .removePrefix("Spritz-Ess-Abstand:")
-        .trim()
     val confidenceLine = if (estimate.confidence.isNotBlank()) estimate.confidence else "mittel"
 
     saveText(context, "lastHomePhotoEstimate", estimate.seenDescription)
@@ -781,29 +831,24 @@ private fun buildHomeMealMessage(context: Context, estimate: MealEstimate, sourc
     saveText(context, "lastRecommendedDose", doseText)
     saveText(context, "newsFeed", "${SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())} · Foto: ${estimate.primaryFood} · ${estimate.carbs} g KH\n" + loadText(context, "newsFeed", ""))
 
-    val seaShort = actionSeaHome(sea)
-    val shortReason = when {
-        glucose.toIntOrNull()?.let { it >= 180 } == true -> "Wert ist erhöht. Nicht lange warten."
-        trend.lowercase(Locale.getDefault()).contains("up") || trend.lowercase(Locale.getDefault()).contains("steig") -> "Wert steigt. Kurzer Abstand ist sinnvoll."
-        glucose.toIntOrNull()?.let { it < 100 } == true -> "Wert ist eher niedrig. Erst essen oder keinen Abstand."
-        else -> "Normale Mahlzeit. Bestätigen, wenn die Schätzung passt."
+    val reason = if (estimate.carbs <= 0) {
+        "Ich bin unsicher, deshalb brauche ich eine kurze Beschreibung von dir."
+    } else {
+        RecommendationFormatter.shortReason(glucose, trend, estimate.carbs)
     }
 
-    return """
-        ━━━━━━━━━━━━━━
-        🔴 $doseText IE spritzen
-        ⏱ $seaShort
-        💬 $shortReason
-
-        Details:
-        Foto: ${estimate.primaryFood}
-        KH: ca. ${estimate.carbs} g · KE: ${String.format(Locale.GERMAN, "%.1f", ke)}
-        Glukose: $glucose mg/dL · Trend: $trend
-        Sicherheit: $confidenceLine
-
-        Gesehen: ${estimate.seenDescription}
-        Quelle: $source
-    """.trimIndent()
+    return RecommendationFormatter.meal(
+        context = context,
+        bolusText = doseText,
+        timingText = sea,
+        reason = reason,
+        carbs = estimate.carbs,
+        ke = ke,
+        glucose = glucose,
+        trend = trend,
+        factor = factor,
+        learning = "Quelle: $source. Sicherheit: $confidenceLine. Gesehen: ${estimate.seenDescription}"
+    )
 }
 
 private fun actionSeaHome(timing: String): String {

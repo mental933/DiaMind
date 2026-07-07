@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import de.diamind.ai.ai.RecommendationFormatter
 import de.diamind.ai.insulin.InsulinAdvisor
 import de.diamind.ai.learning.FoodLearningBridge
 import de.diamind.ai.storage.Preferences.loadText
@@ -99,8 +100,13 @@ fun FoodScreen(context: Context) {
         pendingLocalCarbs = localEstimate.carbs
         pendingOnlineCarbs = if (aiMode == "Lokal") 0 else estimate.carbs
         hasPendingEstimate = true
+        saveText(context, "lastMealDescription", pendingDescription)
+        saveText(context, "lastMealCarbs", pendingCarbs.toString())
+        saveText(context, "lastMealKe", String.format(java.util.Locale.GERMAN, "%.1f", pendingKe))
+        saveText(context, "lastRecommendedDose", InsulinAdvisor.formatDose(context, pendingDose))
 
-        result = estimate.toDisplayText(
+        result = estimate.toDisplayTextV40(
+            context = context,
             glucose = glucose,
             trend = trend,
             slot = slot,
@@ -492,10 +498,36 @@ data class MealEstimate(
     }
 }
 
+fun MealEstimate.toDisplayTextV40(
+    context: Context,
+    glucose: String,
+    trend: String,
+    slot: String,
+    factor: Double,
+    recommendedDose: Double,
+    aiMode: String
+): String {
+    val ke = carbs / 10.0
+    val timing = InsulinAdvisor.preMealTimingAdvice(context, glucose, trend, carbs)
+    return RecommendationFormatter.meal(
+        context = context,
+        bolusText = InsulinAdvisor.formatDose(context, recommendedDose),
+        timingText = timing,
+        reason = RecommendationFormatter.shortReason(glucose, trend, carbs),
+        carbs = carbs,
+        ke = ke,
+        glucose = glucose,
+        trend = trend,
+        factor = factor,
+        learning = "Modus: $aiMode. Sicherheit: $confidence. Gesehen: $seenDescription"
+    )
+}
+
 fun estimateMeal(description: String, portion: String, hasPhoto: Boolean, aiMode: String): MealEstimate {
     val text = description.lowercase()
     val rule = foodRules.firstOrNull { rule -> rule.keywords.any { text.contains(it) } }
     val base = rule?.carbsNormalPortion ?: when {
+        text.isBlank() && hasPhoto && aiMode == "Lokal" -> 0
         text.isBlank() -> 40
         else -> 50
     }
@@ -510,7 +542,7 @@ fun estimateMeal(description: String, portion: String, hasPhoto: Boolean, aiMode
     val confidence = when {
         aiMode != "Lokal" && text.isNotBlank() && hasPhoto -> "mittel bis hoch"
         rule != null && text.isNotBlank() -> "mittel"
-        text.isBlank() && hasPhoto -> "niedrig · Foto vorhanden, aber noch keine echte Bild-KI aktiv"
+        text.isBlank() && hasPhoto -> "unsicher"
         else -> "niedrig bis mittel"
     }
 
@@ -519,7 +551,7 @@ fun estimateMeal(description: String, portion: String, hasPhoto: Boolean, aiMode
         aiMode != "Lokal" && hasPhoto ->
             "Foto vorhanden. $aiMode kann Marken, Verpackungen und Teller online analysieren. Wenn kein API-Key aktiv ist, nutzt DiaMind lokale Regeln. Vermutet: $primaryFood."
         hasPhoto ->
-            "Foto vorhanden. Lokale Analyse nutzt aktuell Beschreibung, bekannte Lebensmittel, Markenwörter und deine bestätigten Mahlzeiten. Vermutet: $primaryFood."
+            if (text.isBlank()) { "Foto vorhanden. Lokal kann DiaMind das Bild nicht sicher erkennen. Bitte kurz beschreiben oder Gemini/OpenAI nutzen." } else { "Foto vorhanden. Die lokale Schaetzung nutzt deine Beschreibung und bekannte Regeln: $primaryFood." }
         text.isNotBlank() ->
             "Aus deiner Beschreibung erkannt: $primaryFood."
         else ->
@@ -832,3 +864,4 @@ private fun extractJsonObject(text: String): String {
 private fun formatOne(value: Double): String {
     return String.format(java.util.Locale.GERMAN, "%.1f", value)
 }
+

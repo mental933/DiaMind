@@ -12,8 +12,8 @@ android {
         minSdk = 26
         targetSdk = 37
 
-        versionCode = 39
-        versionName = "1.0-build-039-action-first"
+        versionCode = 40
+        versionName = "1.0-build-040-chat-cards"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -52,6 +52,10 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
+
+    testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.espresso.core)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

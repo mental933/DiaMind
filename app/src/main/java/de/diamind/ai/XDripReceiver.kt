@@ -1,11 +1,13 @@
 package de.diamind.ai
 
+import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import de.diamind.ai.insulin.InsulinAdvisor
@@ -66,6 +68,8 @@ class XDripReceiver : BroadcastReceiver() {
         }
         val prefs = context.getSharedPreferences("diamind", Context.MODE_PRIVATE)
         val lastState = prefs.getString("lastGuardianState", "")
+        val eventId = "$state:${glucose / 10}:${if (rising) "up" else if (falling) "down" else "flat"}"
+        val lastEventId = prefs.getString("lastGuardianEventId", "")
         val nowMs = System.currentTimeMillis()
         val lastGuardianTime = prefs.getLong("lastGuardianNotificationTimeMs", 0L)
         val minGapMs = 45L * 60L * 1000L
@@ -73,11 +77,13 @@ class XDripReceiver : BroadcastReceiver() {
         if (state == "OK") {
             prefs.edit()
                 .putString("lastGuardianState", "OK")
+                .putString("lastGuardianEventId", "")
                 .putString("lastGuardianSuggestion", "")
                 .putString("activeInsulin", InsulinAdvisor.format(InsulinAdvisor.activeInsulin(context)))
                 .apply()
             return
         }
+        if (eventId == lastEventId) return
         if (state == lastState && nowMs - lastGuardianTime < minGapMs) return
 
         val correctionText = InsulinAdvisor.correctionSuggestion(context, glucose.toString(), trend)
@@ -92,6 +98,7 @@ class XDripReceiver : BroadcastReceiver() {
         val oldNews = prefs.getString("newsFeed", "").orEmpty()
         prefs.edit()
             .putString("lastGuardianState", state)
+            .putString("lastGuardianEventId", eventId)
             .putLong("lastGuardianNotificationTimeMs", nowMs)
             .putString("lastGuardianSuggestion", message)
             .putString("assistantBubble", message)
@@ -102,6 +109,11 @@ class XDripReceiver : BroadcastReceiver() {
     }
 
     private fun showGuardianNotification(context: Context, text: String) {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channelId = "diamind_guardian"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

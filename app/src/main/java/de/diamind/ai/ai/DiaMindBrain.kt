@@ -101,19 +101,22 @@ object DiaMindBrain {
         details: String,
         note: String = ""
     ): String {
-        val sea = actionSea(timing)
-        val shortNote = note.ifBlank { "Wenn etwas nicht stimmt, schreib es direkt in den Chat." }
-        return """
-            ━━━━━━━━━━━━━━
-            🔴 $doseText IE spritzen
-            ⏱ $sea
-            💬 $headline
-
-            Details:
-            $details
-
-            $shortNote
-        """.trimIndent()
+        return buildString {
+            appendLine("🔴 Bolus: $doseText IE")
+            appendLine("⏱ Spritz-Ess-Abstand: ${RecommendationFormatter.seaLabel(timing)}")
+            appendLine("🧠 ${headline.substringBefore(".").trim()}.")
+            appendLine()
+            appendLine("Details:")
+            details.lineSequence()
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .forEach { appendLine("- $it") }
+            if (details.contains("IOB").not()) {
+                appendLine("- IOB: ${RecommendationFormatter.realIobText(context) ?: "keine echte Berechnung"}")
+                appendLine("- Restinsulin: ${RecommendationFormatter.realIobText(context) ?: "nicht berechnet"}")
+            }
+            appendLine("- Lernhinweis: ${note.ifBlank { "Wenn etwas nicht stimmt, sag es direkt im Chat." }}")
+        }.trim()
     }
 
     private fun actionSea(timing: String): String {
@@ -179,9 +182,12 @@ object DiaMindBrain {
 
         val details = """
             Essen: $foodName
-            KH: ca. $carbs g · KE: ${String.format(Locale.GERMAN, "%.1f", ke)}
+            KH: ca. $carbs g
+            KE: ${String.format(Locale.GERMAN, "%.1f", ke)}
+            BE: ${String.format(Locale.GERMAN, "%.1f", carbs / 12.0)}
+            Glukose: $glucose mg/dL
+            Trend: ${trendLabelShort(trend)}
             Faktor: $slot · ${String.format(Locale.GERMAN, "%.1f", factor)} IE/KE
-            Glukose: $glucose mg/dL · Trend: ${trendLabelShort(trend)}
         """.trimIndent()
         val answer = actionFirstMealMessage(
             context = context,
@@ -239,15 +245,17 @@ object DiaMindBrain {
             else -> loadText(context, "glucoseTrend", "manual")
         }
         val correction = InsulinAdvisor.correctionSuggestion(context, glucose, trend)
-        val doseText = Regex("""(\d{1,2})(?:[,.](\d))?\s*IE""").find(correction)?.value?.substringBefore(" ")
-        if (doseText != null) saveText(context, "lastRecommendedDose", doseText)
-        val answer = """
-            ━━━━━━━━━━━━━━
-            🔴 Korrektur prüfen
-            💉 $correction
-            ⏱ jetzt, wenn kein starkes Restinsulin wirkt
-            💬 Kurz: Wert/Trend sprechen für eine Korrektur. Unten mit +/− anpassen und bestätigen.
-        """.trimIndent()
+        val doseText = Regex("""(\d{1,2})(?:[,.](\d))?\s*IE""").find(correction)?.value?.substringBefore(" ") ?: "0"
+        saveText(context, "lastRecommendedDose", doseText)
+        val answer = RecommendationFormatter.correction(
+            context = context,
+            bolusText = doseText,
+            timingText = "Jetzt",
+            reason = "Wert und Trend sprechen fuer eine Korrektur, wenn kein starkes Restinsulin wirkt.",
+            glucose = glucose,
+            trend = trend,
+            factorText = "${loadText(context, "correctionFactor", "50")} mg/dL pro IE"
+        )
         saveText(context, "assistantBubble", answer)
         return answer
     }
@@ -267,7 +275,7 @@ object DiaMindBrain {
             val glucose = loadText(context, "glucose", "?")
             val trend = loadText(context, "glucoseTrend", "manual")
             val record = InsulinAdvisor.saveMealAssumption(context, lastFood, carbs, ke, recommended, "", slot, glucose, trend)
-            return "━━━━━━━━━━━━━━\n✅ Gespeichert\n💉 ${InsulinAdvisor.formatDose(context, recommended)} IE\n💬 Mahlzeit gespeichert. Ich nutze das zum Lernen.\n\nDetails:\n$record"
+            return "Gespeichert: ${InsulinAdvisor.formatDose(context, recommended)} IE. Ich merke mir diese Mahlzeit fuer den Lernverlauf.\n\nDetails:\n$record"
         }
 
         if (lower.contains("mehr bolus") || lower == "+" || lower.contains("plus bolus")) {
@@ -320,7 +328,7 @@ object DiaMindBrain {
                 delta > 2.0 -> "Du hast mehr als die rechnerische Empfehlung gespritzt. Ich merke mir das, bitte Verlauf eng beobachten."
                 else -> "Das liegt nahe an der Empfehlung."
             }
-            return "━━━━━━━━━━━━━━\n✅ Gespeichert\n💉 ${InsulinAdvisor.formatDose(context, actualDose)} IE\n💬 $note\n\nDetails:\n$record"
+            return "Gespeichert: ${InsulinAdvisor.formatDose(context, actualDose)} IE. $note\n\nDetails:\n$record"
         }
 
         val explicitCarbs = Regex("(\\d{1,3})\\s*(g|gramm)?\\s*(kh|kohlenhydrat)", RegexOption.IGNORE_CASE).find(text)?.groupValues?.getOrNull(1)?.toIntOrNull()
@@ -360,9 +368,12 @@ object DiaMindBrain {
         saveText(context, "lastRecommendedDose", InsulinAdvisor.formatDose(context, dose))
         val details = """
             $intro
-            KH: ca. $carbs g · KE: ${String.format(Locale.GERMAN, "%.1f", ke)}
+            KH: ca. $carbs g
+            KE: ${String.format(Locale.GERMAN, "%.1f", ke)}
+            BE: ${String.format(Locale.GERMAN, "%.1f", carbs / 12.0)}
+            Glukose: $glucose mg/dL
+            Trend: ${trendLabelShort(trend)}
             Faktor: $slot · ${String.format(Locale.GERMAN, "%.1f", factor)} IE/KE
-            Glukose: $glucose mg/dL · Trend: ${trendLabelShort(trend)}
         """.trimIndent()
         val answer = actionFirstMealMessage(
             context = context,

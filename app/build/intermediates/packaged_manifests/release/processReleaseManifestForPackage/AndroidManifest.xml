@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="de.diamind.ai"
-    android:versionCode="18"
-    android:versionName="1.0-build-018" >
+    android:versionCode="40"
+    android:versionName="1.0-build-040-chat-cards" >
 
     <uses-sdk
         android:minSdkVersion="26"
@@ -10,6 +10,8 @@
 
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <permission
         android:name="de.diamind.ai.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
